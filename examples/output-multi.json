@@ -1,0 +1,57 @@
+{
+  "taskNo": "T2026022801000495-S2026022801000614",
+  "rejectedOrders": [],
+  "warnings": [],
+  "status": "FEASIBLE",
+  "solutionSource": "ortools",
+  "routes": [
+    {
+      "routeId": "R1",
+      "vehicleTypeName": "VAN-BRA",
+      "vehicleTypeCode": "BR2",
+      "departureTime": "2026-10-21 11:00:00",
+      "completionTime": "2026-10-21 15:50:00",
+      "totalDistance": 110.0,
+      "totalVolume": 3.0,
+      "totalWeight": 300.0,
+      "siteCount": 2,
+      "physicalStopCount": 2,
+      "stops": [
+        {
+          "siteCode": "CCC0008",
+          "orderReleaseIds": [
+            "DN3"
+          ],
+          "arrivalTime": "2026-10-21 14:40:00",
+          "serviceStartTime": "2026-10-21 14:40:00",
+          "departureTime": "2026-10-21 15:10:00",
+          "waitingBeforeArrivalSeconds": 12600,
+          "unloadingSeconds": 1800
+        },
+        {
+          "siteCode": "CCC0007",
+          "orderReleaseIds": [
+            "DN2",
+            "123234768"
+          ],
+          "arrivalTime": "2026-10-21 15:20:00",
+          "serviceStartTime": "2026-10-21 15:20:00",
+          "departureTime": "2026-10-21 15:50:00",
+          "waitingBeforeArrivalSeconds": 0,
+          "unloadingSeconds": 1800
+        }
+      ]
+    }
+  ],
+  "vehicleCount": 1,
+  "servedOrderCount": 3,
+  "totalDistance": 110.0,
+  "objectivePolicy": "vehicles_distance_type",
+  "optimalityProven": false,
+  "solverStatus": 1,
+  "timingsMs": {
+    "buildAndSeed": 9.548,
+    "search": 190.471
+  },
+  "elapsedMs": 200.532
+}

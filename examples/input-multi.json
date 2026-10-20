@@ -1,0 +1,195 @@
+{
+  "allPathDistanceVoList": [
+    {
+      "from": "PA_CROSSDO",
+      "to": "PA_CROSSDO",
+      "planDistance": 0,
+      "duration": 0
+    },
+    {
+      "from": "PA_CROSSDO",
+      "to": "123234768",
+      "planDistance": 100,
+      "duration": 600
+    },
+    {
+      "from": "PA_CROSSDO",
+      "to": "DN2",
+      "planDistance": 100,
+      "duration": 600
+    },
+    {
+      "from": "PA_CROSSDO",
+      "to": "DN3",
+      "planDistance": 100,
+      "duration": 600
+    },
+    {
+      "from": "123234768",
+      "to": "PA_CROSSDO",
+      "planDistance": 10,
+      "duration": 600
+    },
+    {
+      "from": "123234768",
+      "to": "123234768",
+      "planDistance": 0,
+      "duration": 0
+    },
+    {
+      "from": "123234768",
+      "to": "DN2",
+      "planDistance": 0,
+      "duration": 0
+    },
+    {
+      "from": "123234768",
+      "to": "DN3",
+      "planDistance": 10,
+      "duration": 600
+    },
+    {
+      "from": "DN2",
+      "to": "PA_CROSSDO",
+      "planDistance": 10,
+      "duration": 600
+    },
+    {
+      "from": "DN2",
+      "to": "123234768",
+      "planDistance": 0,
+      "duration": 0
+    },
+    {
+      "from": "DN2",
+      "to": "DN2",
+      "planDistance": 0,
+      "duration": 0
+    },
+    {
+      "from": "DN2",
+      "to": "DN3",
+      "planDistance": 10,
+      "duration": 600
+    },
+    {
+      "from": "DN3",
+      "to": "PA_CROSSDO",
+      "planDistance": 10,
+      "duration": 600
+    },
+    {
+      "from": "DN3",
+      "to": "123234768",
+      "planDistance": 10,
+      "duration": 600
+    },
+    {
+      "from": "DN3",
+      "to": "DN2",
+      "planDistance": 10,
+      "duration": 600
+    },
+    {
+      "from": "DN3",
+      "to": "DN3",
+      "planDistance": 0,
+      "duration": 0
+    }
+  ],
+  "unloadingTime": 0.5,
+  "earliestShippingDate": "2026-10-21 11:00",
+  "destCountryCode3": "BRA",
+  "distanceLessThanFirstLeg": false,
+  "dnSiteVoList": [
+    {
+      "deliveryLatitude": -20.80727,
+      "deliveryLongitude": -49.38363,
+      "orderReleaseId": "123234768",
+      "siteCode": "CCC0007",
+      "totalGrossVolume": 1,
+      "totalGrossWeight": 100,
+      "timeWindow": [
+        "2026-10-21 14:00",
+        "2026-10-21 18:00"
+      ]
+    },
+    {
+      "deliveryLatitude": -20.80727,
+      "deliveryLongitude": -49.38363,
+      "orderReleaseId": "DN2",
+      "siteCode": "CCC0007",
+      "totalGrossVolume": 1,
+      "totalGrossWeight": 100,
+      "timeWindow": [
+        "2026-10-21 14:00",
+        "2026-10-21 18:00"
+      ]
+    },
+    {
+      "deliveryLatitude": -20.80727,
+      "deliveryLongitude": -49.38363,
+      "orderReleaseId": "DN3",
+      "siteCode": "CCC0008",
+      "totalGrossVolume": 1,
+      "totalGrossWeight": 100,
+      "timeWindow": [
+        "2026-10-21 14:40",
+        "2026-10-21 18:00"
+      ]
+    }
+  ],
+  "lonAndLatCombination": 0,
+  "maxSiteQty": 2,
+  "pathDistanceVoList": [],
+  "quotationModel": "city",
+  "siteDistanceLimit": 0,
+  "sourceLatitude": -1.342421,
+  "sourceLocation": "PA_CROSSDO",
+  "sourceLongitude": -48.470229,
+  "taskNo": "T2026022801000495-S2026022801000614",
+  "vehicleTypeVoList": [
+    {
+      "themeCode": "BR_L1",
+      "totalVolume": 2,
+      "totalWeight": 500,
+      "vehicleTypeCode": "BR1",
+      "vehicleTypeName": "FIORINO-BRA"
+    },
+    {
+      "themeCode": "BR_L1",
+      "totalVolume": 4,
+      "totalWeight": 1000,
+      "vehicleTypeCode": "BR2",
+      "vehicleTypeName": "VAN-BRA"
+    },
+    {
+      "themeCode": "BR_L1",
+      "totalVolume": 18,
+      "totalWeight": 2500,
+      "vehicleTypeCode": "BR3",
+      "vehicleTypeName": "BAU 3 4-BRA"
+    },
+    {
+      "themeCode": "BR_L1",
+      "totalVolume": 27,
+      "totalWeight": 6000,
+      "vehicleTypeCode": "BR4",
+      "vehicleTypeName": "TOCO 6-BRA"
+    },
+    {
+      "themeCode": "BR_L1",
+      "totalVolume": 39,
+      "totalWeight": 15000,
+      "vehicleTypeCode": "BR5",
+      "vehicleTypeName": "TRUCK-BRA"
+    },
+    {
+      "themeCode": "BR_L1",
+      "totalVolume": 65,
+      "totalWeight": 25000,
+      "vehicleTypeCode": "BR6",
+      "vehicleTypeName": "CARRETA-BRA"
+    }
+  ]
+}

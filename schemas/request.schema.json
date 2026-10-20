@@ -1,0 +1,411 @@
+{
+  "$defs": {
+    "DN": {
+      "additionalProperties": false,
+      "properties": {
+        "orderReleaseId": {
+          "title": "Orderreleaseid",
+          "type": "string"
+        },
+        "siteCode": {
+          "title": "Sitecode",
+          "type": "string"
+        },
+        "deliveryLatitude": {
+          "anyOf": [
+            {
+              "maximum": 90.0,
+              "minimum": -90.0,
+              "type": "number"
+            },
+            {
+              "type": "string"
+            }
+          ],
+          "title": "Deliverylatitude"
+        },
+        "deliveryLongitude": {
+          "anyOf": [
+            {
+              "maximum": 180.0,
+              "minimum": -180.0,
+              "type": "number"
+            },
+            {
+              "type": "string"
+            }
+          ],
+          "title": "Deliverylongitude"
+        },
+        "totalGrossVolume": {
+          "anyOf": [
+            {
+              "minimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "string"
+            }
+          ],
+          "title": "Totalgrossvolume"
+        },
+        "totalGrossWeight": {
+          "anyOf": [
+            {
+              "minimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "string"
+            }
+          ],
+          "title": "Totalgrossweight"
+        },
+        "timeWindow": {
+          "anyOf": [
+            {
+              "items": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Timewindow"
+        }
+      },
+      "required": [
+        "orderReleaseId",
+        "siteCode",
+        "deliveryLatitude",
+        "deliveryLongitude",
+        "totalGrossVolume",
+        "totalGrossWeight"
+      ],
+      "title": "DN",
+      "type": "object"
+    },
+    "Leg": {
+      "additionalProperties": false,
+      "properties": {
+        "beginSiteCode": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Beginsitecode"
+        },
+        "endSiteCode": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Endsitecode"
+        },
+        "from": {
+          "title": "From",
+          "type": "string"
+        },
+        "to": {
+          "title": "To",
+          "type": "string"
+        },
+        "planDistance": {
+          "anyOf": [
+            {
+              "minimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "string"
+            }
+          ],
+          "title": "Plandistance"
+        },
+        "duration": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Duration"
+        }
+      },
+      "required": [
+        "from",
+        "to",
+        "planDistance"
+      ],
+      "title": "Leg",
+      "type": "object"
+    },
+    "Vehicle": {
+      "additionalProperties": false,
+      "properties": {
+        "themeCode": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Themecode"
+        },
+        "totalVolume": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "string"
+            }
+          ],
+          "title": "Totalvolume"
+        },
+        "totalWeight": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "string"
+            }
+          ],
+          "title": "Totalweight"
+        },
+        "vehicleTypeCode": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Vehicletypecode"
+        },
+        "vehicleTypeName": {
+          "title": "Vehicletypename",
+          "type": "string"
+        }
+      },
+      "required": [
+        "totalVolume",
+        "totalWeight",
+        "vehicleTypeName"
+      ],
+      "title": "Vehicle",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "allPathDistanceVoList": {
+      "items": {
+        "$ref": "#/$defs/Leg"
+      },
+      "title": "Allpathdistancevolist",
+      "type": "array"
+    },
+    "pathDistanceVoList": {
+      "items": {
+        "$ref": "#/$defs/Leg"
+      },
+      "title": "Pathdistancevolist",
+      "type": "array"
+    },
+    "unloadingTime": {
+      "anyOf": [
+        {
+          "minimum": 0.0,
+          "type": "number"
+        },
+        {
+          "type": "string"
+        }
+      ],
+      "default": "0",
+      "title": "Unloadingtime"
+    },
+    "earliestShippingDate": {
+      "format": "date-time",
+      "title": "Earliestshippingdate",
+      "type": "string"
+    },
+    "latestShippingDate": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Latestshippingdate"
+    },
+    "enableTimeWindows": {
+      "default": true,
+      "title": "Enabletimewindows",
+      "type": "boolean"
+    },
+    "destCountryCode3": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Destcountrycode3"
+    },
+    "distanceLessThanFirstLeg": {
+      "default": false,
+      "title": "Distancelessthanfirstleg",
+      "type": "boolean"
+    },
+    "dnSiteVoList": {
+      "items": {
+        "$ref": "#/$defs/DN"
+      },
+      "title": "Dnsitevolist",
+      "type": "array"
+    },
+    "lonAndLatCombination": {
+      "anyOf": [
+        {
+          "enum": [
+            0,
+            1,
+            2
+          ],
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Lonandlatcombination"
+    },
+    "maxSiteQty": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Maxsiteqty",
+      "type": "integer"
+    },
+    "quotationModel": {
+      "anyOf": [
+        {
+          "enum": [
+            "distance",
+            "city",
+            "zipCode",
+            "province",
+            ""
+          ],
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Quotationmodel"
+    },
+    "siteDistanceLimit": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "string"
+        }
+      ],
+      "default": "0",
+      "title": "Sitedistancelimit"
+    },
+    "sourceLatitude": {
+      "anyOf": [
+        {
+          "maximum": 90.0,
+          "minimum": -90.0,
+          "type": "number"
+        },
+        {
+          "type": "string"
+        }
+      ],
+      "title": "Sourcelatitude"
+    },
+    "sourceLongitude": {
+      "anyOf": [
+        {
+          "maximum": 180.0,
+          "minimum": -180.0,
+          "type": "number"
+        },
+        {
+          "type": "string"
+        }
+      ],
+      "title": "Sourcelongitude"
+    },
+    "sourceLocation": {
+      "title": "Sourcelocation",
+      "type": "string"
+    },
+    "taskNo": {
+      "default": "",
+      "title": "Taskno",
+      "type": "string"
+    },
+    "vehicleTypeVoList": {
+      "items": {
+        "$ref": "#/$defs/Vehicle"
+      },
+      "minItems": 1,
+      "title": "Vehicletypevolist",
+      "type": "array"
+    }
+  },
+  "required": [
+    "allPathDistanceVoList",
+    "earliestShippingDate",
+    "dnSiteVoList",
+    "sourceLatitude",
+    "sourceLongitude",
+    "sourceLocation",
+    "vehicleTypeVoList"
+  ],
+  "title": "Request",
+  "type": "object"
+}

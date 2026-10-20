@@ -1,0 +1,39 @@
+{
+  "dn": 100,
+  "runs": 3,
+  "budgetMs": 200,
+  "medianMs": 500.802,
+  "maxMs": 539.711,
+  "records": [
+    {
+      "elapsedMs": 447.845,
+      "vehicleCount": 24,
+      "totalDistance": 1876.759,
+      "solutionSource": "insertion_fallback",
+      "timingsMs": {
+        "buildAndSeed": 387.02,
+        "search": 0.0
+      }
+    },
+    {
+      "elapsedMs": 500.802,
+      "vehicleCount": 27,
+      "totalDistance": 1981.043,
+      "solutionSource": "insertion_fallback",
+      "timingsMs": {
+        "buildAndSeed": 447.803,
+        "search": 0.0
+      }
+    },
+    {
+      "elapsedMs": 539.711,
+      "vehicleCount": 28,
+      "totalDistance": 2088.0,
+      "solutionSource": "insertion_fallback",
+      "timingsMs": {
+        "buildAndSeed": 476.584,
+        "search": 0.0
+      }
+    }
+  ]
+}

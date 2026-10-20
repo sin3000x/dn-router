@@ -1,0 +1,19 @@
+{
+  "dn": 100,
+  "runs": 1,
+  "budgetMs": 3000,
+  "medianMs": 3002.346,
+  "maxMs": 3002.346,
+  "records": [
+    {
+      "elapsedMs": 3002.346,
+      "vehicleCount": 24,
+      "totalDistance": 1312.119,
+      "solutionSource": "ortools",
+      "timingsMs": {
+        "buildAndSeed": 473.893,
+        "search": 2465.854
+      }
+    }
+  ]
+}
