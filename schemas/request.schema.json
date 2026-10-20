@@ -1,7 +1,6 @@
 {
   "$defs": {
     "DN": {
-      "additionalProperties": false,
       "properties": {
         "orderReleaseId": {
           "title": "Orderreleaseid",
@@ -90,7 +89,6 @@
       "type": "object"
     },
     "Leg": {
-      "additionalProperties": false,
       "properties": {
         "beginSiteCode": {
           "anyOf": [
@@ -159,7 +157,6 @@
       "type": "object"
     },
     "Vehicle": {
-      "additionalProperties": false,
       "properties": {
         "themeCode": {
           "anyOf": [
@@ -223,7 +220,6 @@
       "type": "object"
     }
   },
-  "additionalProperties": false,
   "properties": {
     "allPathDistanceVoList": {
       "items": {

@@ -1,17 +1,13 @@
 from datetime import datetime
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Annotated, Literal
-from pydantic import BaseModel, ConfigDict, Field, model_validator, field_validator
+from pydantic import BaseModel, Field, model_validator, field_validator
 
 NonNegative = Annotated[Decimal, Field(ge=0, allow_inf_nan=False)]
 Positive = Annotated[Decimal, Field(gt=0, allow_inf_nan=False)]
 
 
-class InputModel(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-
-class DN(InputModel):
+class DN(BaseModel):
     orderReleaseId: str
     siteCode: str
     deliveryLatitude: Annotated[Decimal, Field(ge=-90, le=90, allow_inf_nan=False)]
@@ -30,7 +26,7 @@ class DN(InputModel):
         return value
 
 
-class Vehicle(InputModel):
+class Vehicle(BaseModel):
     themeCode: str | None = None
     totalVolume: Positive
     totalWeight: Positive
@@ -38,7 +34,7 @@ class Vehicle(InputModel):
     vehicleTypeName: str
 
 
-class Leg(InputModel):
+class Leg(BaseModel):
     beginSiteCode: str | None = None
     endSiteCode: str | None = None
     origin: str = Field(alias="from")
@@ -47,7 +43,7 @@ class Leg(InputModel):
     duration: Annotated[int, Field(ge=0)] | None = None
 
 
-class Request(InputModel):
+class Request(BaseModel):
     allPathDistanceVoList: list[Leg]
     pathDistanceVoList: list[Leg] = Field(default_factory=list)
     unloadingTime: NonNegative = Decimal("0")

@@ -47,6 +47,18 @@ def test_open_route_small_vehicle():
     assert r['routes'][0]['vehicle'] == 'small'
 
 
+def test_extra_fields_are_ignored():
+    p = case(1)
+    expected = Request.model_validate(p)
+    p['extra'] = {'metadata': True}
+    for field in ('dnSiteVoList', 'vehicleTypeVoList', 'allPathDistanceVoList'):
+        p[field][0]['extra'] = 'ignored'
+    p['pathDistanceVoList'] = [dict(p['allPathDistanceVoList'][0])]
+    expected.pathDistanceVoList = expected.allPathDistanceVoList[:1]
+    assert Request.model_validate(p) == expected
+    assert run(p)['servedOrderCount'] == 1
+
+
 def test_vehicle_count_primary():
     r = run(case())
     assert r['vehicleCount'] == 1
