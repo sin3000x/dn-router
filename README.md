@@ -28,12 +28,12 @@ DN 体积 100 > 最大容积 65，应返回 `INFEASIBLE_INPUT`，不是成功漏
 
 - 路线从 `sourceLocation` 出发，最后一个站点卸完结束，不返仓。
 - 体积和重量分别求和，必须同时适配**同一种**车型。不要求车型容量互相嵌套。
-- 以 `vehicleTypeName` 为唯一车型 ID；同时保留 `vehicleTypeCode` 输出。
-- 同车同 `siteCode` 的 DN 形成**一次连续停靠、一个共同到达时间**，只计一次 `unloadingTime`。
+- 以 `vehicleTypeName` 为唯一车型 ID，输出为 `vehicle`。
+- 同车同 `siteCode` 的 DN 形成**一次连续停靠、一个共同开始卸货时间**，只计一次 `unloadingTime`。
   同站 DN 可分给不同车；每辆车各计一次卸货。不同 DN 时间窗不相交时不能同车同次交付。
   不允许同一车辆离开后再次访问该站点。
 - 站点数口径与卸货身份独立：0 按 siteCode，1 按经纬度六位小数 ROUND_HALF_UP，2/null 按 DN。
-  因此 DN 口径可能 `siteCount=3`，但 `physicalStopCount=2`。`maxSiteQty=0` 表示不限。
+  因此 DN 口径可能计 3 站，但实际只卸货 2 次。`maxSiteQty=0` 表示不限。
 - `siteDistanceLimit<=0` 表示不限；只限制配送点之间，不限制仓库到首站。
 - `distanceLessThanFirstLeg=true`：站间距离之和 <= 仓库到首站距离；单站路线自然满足。
 - `quotationModel=distance/null/""`：按 **总距离、车型等级和** 的严格优先顺序优化。
@@ -48,9 +48,10 @@ DN 体积 100 > 最大容积 65，应返回 `INFEASIBLE_INPUT`，不是成功漏
   距离最多 3 位小数，体积/重量最多 6 位小数；整数化是精确的，更多精度返回输入错误。
 - 日期均为**同一业务当地时间**，不带时区；国家码不能唯一确定时区（例如巴西）。不自动换成 UTC。
 - `earliestShippingDate` 为出发下限。新增可选 `latestShippingDate` 为出发上限；未给不补造上限。
-- 默认允许早到前在途中/站外等待，`arrivalTime` 为等待结束后进入站点的到达时刻，必须落在窗口内。
-  `waitingBeforeArrivalSeconds` 单独返回，`serviceStartTime=arrivalTime`；窗口约束到达，不要求窗内卸完。
-  输出当前选择最早出仓的可行时间表，不优化等待时间。若业务禁止途中/站外等待，需更换时间语义后再使用。
+- 允许提前到达并等待。`eta` **表示开始卸货时间**，必须位于每个 DN 的时间窗内；不要求窗内卸完。
+  不输出物理到达时间。下一站开始卸货不得早于本站 eta + 卸货时间 + 行驶时间。
+  同车同站多个 DN 共用 eta，卸货时间只计一次。
+  输出选择最早出仓的可行时间表，不优化等待时间。
 - `timeWindow=null`/未给：该 DN 无时间窗；`[]` 或 start>end：空窗口，允许剔除；相等是合法单点窗口。
 - 新增可选 `enableTimeWindows=false`：忽略所有 DN 时间窗，保留出发时间与卸货时间。
 
@@ -67,7 +68,7 @@ DN 体积 100 > 最大容积 65，应返回 `INFEASIBLE_INPUT`，不是成功漏
 只允许以下两种逐 DN 剔除：
 
 1. `EMPTY_TIME_WINDOW`：窗口为空。
-2. `DIRECT_TIME_WINDOW_UNREACHABLE`：最早出仓直送，也晚于到货窗上限。
+2. `DIRECT_TIME_WINDOW_UNREACHABLE`：最早出仓直送，也晚于开始卸货时间窗上限。
 
 直送可提前等待，所以仅有出发上限不导致“到货窗口太晚”不可行。
 有效订单超出所有车型容量：`INFEASIBLE_INPUT`，整批不交付部分路线。
@@ -128,3 +129,20 @@ uv run pytest -q
 ```
 
 依赖由 `pyproject.toml` 和 `uv.lock` 管理。使用 `uv sync --locked` 安装，生产使用 `uv sync --locked --no-dev`。新增依赖使用 `uv add`，开发依赖使用 `uv add --dev`。Python 默认版本由 `.python-version` 指定。
+
+## 输出协议
+
+CLI 默认输出路线 JSON 数组，与 `solve(payload)["routes"]` 相同；诊断信息（包括逐 DN 的
+`rejectedOrders`、全局错误、状态和耗时）输出到 stderr。`--report` 则在 stdout 输出完整报告，
+与 Python `solve(payload)` 一致。错误时路线数组为空，CLI 退出码仍为 2；不能仅依据空数组判断成功。
+
+每条路线字段：
+
+- `dist`：路线总距离，含仓库到首站，不含返仓，单位与输入一致。
+- `siteAddresses`：按配送顺序排列的 **DN orderReleaseId**，不是 siteCode。
+- `departure_date`：仓库出发时间，每条路线都有。
+- `siteDetails`：每个 DN 一项，`siteAddress` 为 DN 号，`eta` 为开始卸货时间。
+- `vehicle`：车型名称；`volume`、`weight`：该车 DN 的体积、重量之和。
+
+时间统一输出 `YYYY-MM-DD HH:mm:ss`，保留运输耗时产生的秒数，避免截断后 eta 落到窗口外。
+同站多个 DN 仍逐单输出，共用一个 eta。完整路线示例见 `examples/output-multi.json`。

@@ -160,28 +160,23 @@ def solve(payload: dict, *, time_limit_ms: int = 200) -> dict:
     def timestamp(seconds):
         return (request.earliestShippingDate + timedelta(seconds=seconds)).isoformat(sep=" ")
     output = []
-    for idx, (nodes, kind) in enumerate(routes, 1):
+    for nodes, kind in routes:
         visits = p.schedule(nodes)
         vehicle = p.vehicles[kind]
         distance_value = sum(p.distance[a][b] for a, b in zip([0]+nodes, nodes))
-        stops = []
-        for node, t in zip(nodes, visits):
-            dn = p.dns[node-1]
-            if stops and stops[-1]["siteCode"] == dn.siteCode:
-                stops[-1]["orderReleaseIds"].append(dn.orderReleaseId)
-                continue
-            stops.append({"siteCode": dn.siteCode, "orderReleaseIds": [dn.orderReleaseId],
-                          "arrivalTime": timestamp(t[1]), "serviceStartTime": timestamp(t[1]),
-                          "departureTime": timestamp(t[2]), "waitingBeforeArrivalSeconds": t[1]-t[0],
-                          "unloadingSeconds": p.service})
-        output.append({"routeId": f"R{idx}", "vehicleTypeName": vehicle.vehicleTypeName,
-                       "vehicleTypeCode": vehicle.vehicleTypeCode,
-                       "departureTime": timestamp(0), "completionTime": timestamp(visits[-1][2]),
-                       "totalDistance": distance_value/DIST_SCALE,
-                       "totalVolume": float(sum(p.dns[i-1].totalGrossVolume for i in nodes)),
-                       "totalWeight": float(sum(p.dns[i-1].totalGrossWeight for i in nodes)),
-                       "siteCount": len({group_key(p.dns[i-1], request.lonAndLatCombination) for i in nodes}),
-                       "physicalStopCount": len(stops), "stops": stops})
+        output.append({
+            "dist": distance_value/DIST_SCALE,
+            "siteAddresses": [p.dns[i-1].orderReleaseId for i in nodes],
+            "departure_date": timestamp(0),
+            "siteDetails": [
+                {"siteAddress": p.dns[node-1].orderReleaseId,
+                 "eta": timestamp(visit[1])}
+                for node, visit in zip(nodes, visits)
+            ],
+            "vehicle": vehicle.vehicleTypeName,
+            "volume": float(sum(p.dns[i-1].totalGrossVolume for i in nodes)),
+            "weight": float(sum(p.dns[i-1].totalGrossWeight for i in nodes)),
+        })
 
     return {**base_result, "status": "FEASIBLE" if n else "NO_ELIGIBLE_ORDERS", "solutionSource": source,
             "routes": output, "vehicleCount": len(output), "servedOrderCount": n,

@@ -11,13 +11,17 @@ def main():
     parser.add_argument("input", help="JSON input path, or - for stdin")
     parser.add_argument("--time-limit-ms", type=int, default=200)
     parser.add_argument("--output", "-o")
+    parser.add_argument("--report", action="store_true", help="Output full status, errors and routing report")
     args = parser.parse_args()
     try:
         raw = sys.stdin.read() if args.input == "-" else Path(args.input).read_text(encoding="utf-8")
         result = solve(json.loads(raw, parse_float=Decimal), time_limit_ms=args.time_limit_ms)
     except (ValueError, OSError) as error:
         result = {"status": "INVALID_INPUT", "errors": [{"message": str(error)}], "routes": []}
-    text = json.dumps(result, ensure_ascii=False, indent=2) + "\n"
+    if not args.report:
+        diagnostics = {key: value for key, value in result.items() if key != "routes"}
+        print(json.dumps(diagnostics, ensure_ascii=False), file=sys.stderr)
+    text = json.dumps(result if args.report else result["routes"], ensure_ascii=False, indent=2) + "\n"
     if args.output:
         Path(args.output).write_text(text, encoding="utf-8")
     else:

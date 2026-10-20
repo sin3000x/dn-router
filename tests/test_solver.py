@@ -28,7 +28,7 @@ def run(p):
     r = solve(p, time_limit_ms=180)
     assert r['status'] == 'FEASIBLE', r
     expected = {d['orderReleaseId'] for d in p['dnSiteVoList']} - {d['orderReleaseId'] for d in r['rejectedOrders']}
-    actual = [dn for route in r['routes'] for stop in route['stops'] for dn in stop['orderReleaseIds']]
+    actual = [dn for route in r['routes'] for dn in route['siteAddresses']]
     assert set(actual) == expected and len(actual) == len(expected)
     return r
 
@@ -44,13 +44,13 @@ def test_original_is_capacity_error():
 def test_open_route_small_vehicle():
     r = run(case(1))
     assert r['totalDistance'] == 10
-    assert r['routes'][0]['vehicleTypeName'] == 'small'
+    assert r['routes'][0]['vehicle'] == 'small'
 
 
 def test_vehicle_count_primary():
     r = run(case())
     assert r['vehicleCount'] == 1
-    assert r['routes'][0]['vehicleTypeName'] == 'large'
+    assert r['routes'][0]['vehicle'] == 'large'
 
 
 @pytest.mark.parametrize('mode,expected', [(0,1),(1,1),(2,3),(None,3)])
@@ -79,10 +79,12 @@ def test_unload_once_same_site_tight_window():
         d['timeWindow'] = ['2026-10-21 11:01', '2026-10-21 11:02']
     r = run(p)
     assert r['vehicleCount'] == 1
-    stops = r['routes'][0]['stops']
-    assert len(stops) == 1
-    assert stops[0]['unloadingSeconds'] == 1800
-    assert len(stops[0]['orderReleaseIds']) == 2
+    details = r['routes'][0]['siteDetails']
+    assert len(details) == 2
+    assert details[0]['eta'] == details[1]['eta']
+    schedule = prepare(Request.model_validate(p)).schedule([1, 2])
+    assert schedule[0] == schedule[1]
+    assert schedule[0][2] - schedule[0][1] == 1800
 
 
 def test_same_site_disjoint_windows_use_two_vehicles():
@@ -93,7 +95,7 @@ def test_same_site_disjoint_windows_use_two_vehicles():
     p['dnSiteVoList'][1]['timeWindow'] = ['2026-10-21 14:00','2026-10-21 14:10']
     r = run(p)
     assert r['vehicleCount'] == 2
-    assert all(x['stops'][0]['unloadingSeconds'] == 1800 for x in r['routes'])
+    assert all(len(x['siteDetails']) == 1 for x in r['routes'])
 
 
 def test_inter_stop_limit_is_hard_and_not_depot_limit():
@@ -133,8 +135,8 @@ def test_waiting_and_latest_departure():
     p['latestShippingDate'] = '2026-10-21 11:05'
     p['dnSiteVoList'][0]['timeWindow'] = ['2026-10-21 14:00','2026-10-21 15:00']
     r = run(p)
-    assert r['routes'][0]['departureTime'] == '2026-10-21 11:00:00'
-    assert r['routes'][0]['stops'][0]['serviceStartTime'] == '2026-10-21 14:00:00'
+    assert r['routes'][0]['departure_date'] == '2026-10-21 11:00:00'
+    assert r['routes'][0]['siteDetails'][0]['eta'] == '2026-10-21 14:00:00'
 
 
 def test_missing_matrix_is_error():
@@ -191,16 +193,41 @@ def test_precision_not_silently_rounded():
     assert solve(p)['status'] == 'INVALID_INPUT'
 
 
-def test_output_arrivals_within_all_dn_windows():
-    p = case(2)
-    for dn in p['dnSiteVoList']:
+def test_early_arrival_waits_and_outputs_service_start_only():
+    p = case(3)
+    for dn in p['dnSiteVoList'][:2]:
         dn['siteCode'] = 'shared'
         dn['timeWindow'] = ['2026-10-21 14:00','2026-10-21 14:01']
+    p['dnSiteVoList'][2]['timeWindow'] = ['2026-10-21 14:31','2026-10-21 14:31']
     r = run(p)
-    stop = r['routes'][0]['stops'][0]
-    assert stop['arrivalTime'] == '2026-10-21 14:00:00'
-    assert stop['departureTime'] == '2026-10-21 14:30:00'
-    assert stop['waitingBeforeArrivalSeconds'] > 0
+    assert r['vehicleCount'] == 1
+    route = r['routes'][0]
+    assert set(route) == {'dist', 'siteAddresses', 'departure_date', 'siteDetails', 'vehicle', 'volume', 'weight'}
+    assert route['siteAddresses'] == [d['siteAddress'] for d in route['siteDetails']]
+    details = {d['siteAddress']: d['eta'] for d in route['siteDetails']}
+    assert details == {'D0': '2026-10-21 14:00:00', 'D1': '2026-10-21 14:00:00', 'D2': '2026-10-21 14:31:00'}
+    for detail in route['siteDetails']:
+        assert set(detail) == {'siteAddress', 'eta'}
+    visits = prepare(Request.model_validate(p)).schedule([1, 2, 3])
+    assert visits[0][0] < visits[0][1]
+
+
+def test_cli_default_array_and_full_report(capsys):
+    import sys
+    from unittest.mock import patch
+    from dn_router.cli import main
+    for option in ([], ['--report']):
+        with patch.object(sys, 'argv', ['dn-router', str(ROOT/'examples/input-feasible.json'), *option]):
+            assert main() == 0
+        captured = capsys.readouterr()
+        output = json.loads(captured.out)
+        if option:
+            assert output['status'] == 'FEASIBLE'
+            assert not captured.err
+        else:
+            assert isinstance(output, list)
+            assert 'eta' in output[0]['siteDetails'][0]
+            assert json.loads(captured.err)['status'] == 'FEASIBLE'
 
 
 def test_single_point_window_is_valid():
