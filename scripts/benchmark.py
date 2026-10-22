@@ -1,4 +1,4 @@
-"""Reproducible synthetic smoke benchmark; not a production SLA benchmark."""
+"""固定随机种子的合成冒烟基准，用于本地对比，不代表生产性能承诺。"""
 import argparse
 import json
 import math
@@ -7,13 +7,16 @@ import statistics
 from dn_router import solve
 
 
+# 生成完整的仓库至 DN、DN 至 DN 有向矩阵，直线距离仅用于合成样本。
 def generate(n, seed):
+    # 使用局部随机源保证同一种子可复现，且不改变其他代码的随机状态。
     rng = random.Random(seed)
     points = [(0,0)] + [(rng.uniform(-50,50),rng.uniform(-50,50)) for _ in range(n)]
     ids = ['DEPOT'] + [f'DN{i}' for i in range(n)]
     matrix = []
     for i, a in enumerate(ids):
         for j, b in enumerate(ids):
+            # 不生成对角线和返仓边，符合开放路线输入要求。
             if i != j and j:
                 distance = round(math.dist(points[i],points[j]),3)
                 matrix.append({'from':a,'to':b,'planDistance':distance,'duration':math.ceil(distance*60)})
@@ -30,6 +33,7 @@ def generate(n, seed):
                                 for i,v in enumerate([2,4,18,27,39,65])]}
 
 
+# 逐种子执行并确认没有漏单，输出总体耗时及各阶段指标供人工比较。
 def main():
     parser=argparse.ArgumentParser()
     parser.add_argument('--runs',type=int,default=5)

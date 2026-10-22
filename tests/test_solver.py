@@ -1,3 +1,4 @@
+# 业务回归测试：用小样本固定输入、输出及边界规则。
 import copy
 import json
 from pathlib import Path
@@ -9,6 +10,7 @@ from dn_router.problem import prepare, validate_routes, InputError
 ROOT = Path(__file__).resolve().parents[1]
 
 
+# 构造可复用的完整小矩阵样本，各 DN 默认独立站点且不设时间窗。
 def case(n=3):
     p = json.loads((ROOT/'examples/input-feasible.json').read_text())
     p['dnSiteVoList'] = [{**copy.deepcopy(p['dnSiteVoList'][0]), 'orderReleaseId': f'D{i}', 'siteCode': f'S{i}',
@@ -24,6 +26,7 @@ def case(n=3):
     return p
 
 
+# 统一验证可行状态，并核对保留 DN 无漏单、无重复。
 def run(p):
     r = solve(p, time_limit_ms=180)
     assert r['status'] == 'FEASIBLE', r
@@ -33,6 +36,7 @@ def run(p):
     return r
 
 
+# 原始示例超过全部车型容量，必须整批失败并返回容量错误。
 def test_original_is_capacity_error():
     p = json.loads((ROOT/'examples/input-original.json').read_text())
     r = solve(p)
@@ -41,12 +45,14 @@ def test_original_is_capacity_error():
     assert not r['routes']
 
 
+# 单单路线只计出仓距离，且选择容量足够的最小车型。
 def test_open_route_small_vehicle():
     r = run(case(1))
     assert r['totalDistance'] == 10
     assert r['routes'][0]['vehicle'] == 'small'
 
 
+# 请求及各层嵌套对象允许额外字段，忽略后模型和求解行为保持一致。
 def test_extra_fields_are_ignored():
     p = case(1)
     expected = Request.model_validate(p)
@@ -59,6 +65,7 @@ def test_extra_fields_are_ignored():
     assert run(p)['servedOrderCount'] == 1
 
 
+# 车辆数优先时允许升级车型，将多单合并到一辆车。
 def test_vehicle_count_primary():
     r = run(case())
     assert r['vehicleCount'] == 1
@@ -66,6 +73,7 @@ def test_vehicle_count_primary():
 
 
 @pytest.mark.parametrize('mode,expected', [(0,1),(1,1),(2,3),(None,3)])
+# 同一输入按站点、坐标或 DN 计数时，应得到对应的车辆拆分结果。
 def test_distinct_count(mode, expected):
     p = case()
     for d in p['dnSiteVoList']:
@@ -76,6 +84,7 @@ def test_distinct_count(mode, expected):
     assert r['vehicleCount'] == expected
 
 
+# 负坐标临界小数按 ROUND_HALF_UP 舍入后应归入同组。
 def test_geo_half_up():
     p = case(2)
     p['dnSiteVoList'][0]['deliveryLatitude'] = '-20.1234565'
@@ -84,6 +93,7 @@ def test_geo_half_up():
     assert group_key(q.dnSiteVoList[0], 1) == group_key(q.dnSiteVoList[1], 1)
 
 
+# 同车同站共享 eta，紧窗口下只计算一次卸货时间。
 def test_unload_once_same_site_tight_window():
     p = case(2)
     for d in p['dnSiteVoList']:
@@ -99,6 +109,7 @@ def test_unload_once_same_site_tight_window():
     assert schedule[0][2] - schedule[0][1] == 1800
 
 
+# 同站时间窗不相交时不能共用一次停靠，需要分车。
 def test_same_site_disjoint_windows_use_two_vehicles():
     p = case(2)
     for d in p['dnSiteVoList']:
@@ -110,12 +121,14 @@ def test_same_site_disjoint_windows_use_two_vehicles():
     assert all(len(x['siteDetails']) == 1 for x in r['routes'])
 
 
+# 站间距离是硬限制，但不限制仓库到首站。
 def test_inter_stop_limit_is_hard_and_not_depot_limit():
     p = case(2)
     p['siteDistanceLimit'] = 0.5
     assert run(p)['vehicleCount'] == 2
 
 
+# 站间距离和超过首段时拆车，关闭首段约束后允许合并。
 def test_first_leg_constraint():
     p = case(2)
     for leg in p['allPathDistanceVoList']:
@@ -126,6 +139,7 @@ def test_first_leg_constraint():
     assert run(p)['vehicleCount'] == 1
 
 
+# 仅空窗及最早出仓直送仍超时的 DN 可被逐单剔除。
 def test_time_exclusions_only():
     p = case(3)
     p['dnSiteVoList'][0]['timeWindow'] = []
@@ -135,6 +149,7 @@ def test_time_exclusions_only():
     assert r['servedOrderCount'] == 1
 
 
+# 关闭时间窗后，原本空窗的 DN 仍必须配送。
 def test_disable_time_windows():
     p = case(1)
     p['dnSiteVoList'][0]['timeWindow'] = []
@@ -142,6 +157,7 @@ def test_disable_time_windows():
     assert run(p)['servedOrderCount'] == 1
 
 
+# 允许最早出仓后等待，出发上限不应误当成到货上限。
 def test_waiting_and_latest_departure():
     p = case(1)
     p['latestShippingDate'] = '2026-10-21 11:05'
@@ -151,18 +167,21 @@ def test_waiting_and_latest_departure():
     assert r['routes'][0]['siteDetails'][0]['eta'] == '2026-10-21 14:00:00'
 
 
+# 缺少必需的有向矩阵边时返回输入错误，不能默认距离为零。
 def test_missing_matrix_is_error():
     p = case(2)
     p['allPathDistanceVoList'] = [l for l in p['allPathDistanceVoList'] if not (l['from']=='D0' and l['to']=='D1')]
     assert solve(p)['status'] == 'INVALID_INPUT'
 
 
+# 同一有向边的重复记录若耗时冲突，必须拒绝输入。
 def test_conflicting_matrix_is_error():
     p = case(1)
     p['allPathDistanceVoList'].append({**p['allPathDistanceVoList'][0], 'duration': 100})
     assert solve(p)['status'] == 'INVALID_INPUT'
 
 
+# 两项载荷必须同时适配同一种车型，不能拼接不同车型的容量。
 def test_non_nested_vehicle_capacities():
     p = case(2)
     p['vehicleTypeVoList'] = [{'vehicleTypeName':'bulky','totalVolume':10,'totalWeight':100},
@@ -172,6 +191,7 @@ def test_non_nested_vehicle_capacities():
     assert run(p)['vehicleCount'] == 2
 
 
+# 距离优先可选择多车；车辆数优先时应接受更长的合并路线。
 def test_distance_precedes_vehicle_count():
     p = case(2)
     for leg in p['allPathDistanceVoList']:
@@ -182,12 +202,14 @@ def test_distance_precedes_vehicle_count():
     assert run(p)['vehicleCount'] == 1
 
 
+# 独立审计必须发现路线遗漏的有效 DN。
 def test_independent_validator_detects_omission():
     p = prepare(Request.model_validate(case(2)))
     with pytest.raises(InputError, match='omitted'):
         validate_routes(p, [([1],0)])
 
 
+# 极短预算下仍需通过可行兜底覆盖全部订单。
 def test_tiny_budget_keeps_all_orders():
     p = case(15)
     r = solve(p, time_limit_ms=1)
@@ -195,16 +217,19 @@ def test_tiny_budget_keeps_all_orders():
     assert r['servedOrderCount'] == 15
 
 
+# 无订单时返回无有效订单状态，不虚构配送路线。
 def test_empty_input():
     assert solve(case(0))['status'] == 'NO_ELIGIBLE_ORDERS'
 
 
+# 载荷超出支持的小数精度必须报错，不能静默舍入。
 def test_precision_not_silently_rounded():
     p = case(1)
     p['dnSiteVoList'][0]['totalGrossVolume'] = '1.0000001'
     assert solve(p)['status'] == 'INVALID_INPUT'
 
 
+# 公开 eta 表示开始卸货，验证提前等待、同站共享时间及输出字段。
 def test_early_arrival_waits_and_outputs_service_start_only():
     p = case(3)
     for dn in p['dnSiteVoList'][:2]:
@@ -224,6 +249,7 @@ def test_early_arrival_waits_and_outputs_service_start_only():
     assert visits[0][0] < visits[0][1]
 
 
+# CLI 默认输出路线数组并分流诊断；报告模式输出完整结果。
 def test_cli_default_array_and_full_report(capsys):
     import sys
     from unittest.mock import patch
@@ -242,6 +268,7 @@ def test_cli_default_array_and_full_report(capsys):
             assert json.loads(captured.err)['status'] == 'FEASIBLE'
 
 
+# 起止相同的单点时间窗合法，不能当空窗口剔除。
 def test_single_point_window_is_valid():
     p = case(1)
     p['dnSiteVoList'][0]['timeWindow'] = ['2026-10-21 12:00','2026-10-21 12:00']
