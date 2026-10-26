@@ -23,3 +23,9 @@ dn_router = ["report.html"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.pyright]
+venvPath = "."
+venv = ".venv"
+extraPaths = ["src"]
+include = ["src", "tests", "scripts", "benchmarks"]
