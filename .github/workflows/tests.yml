@@ -1,6 +1,13 @@
-# 在支持的 Python 版本上安装锁定依赖，运行回归测试及命令行冒烟检查。
+# 在支持的 Python 版本上安装依赖，运行回归测试及命令行冒烟检查。
 name: tests
-on: [push, pull_request]
+# 只在 main 推送、PR 和手动触发时运行；功能分支的推送不再单独跑，纯文档改动跳过。
+on:
+  push:
+    branches: [main]
+    paths-ignore: ['**.md', '.zed/**']
+  pull_request:
+    paths-ignore: ['**.md', '.zed/**']
+  workflow_dispatch:
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -14,7 +21,7 @@ jobs:
           version: '0.12.23'
           enable-cache: true
           python-version: ${{ matrix.python-version }}
-      # 严格按锁文件安装，避免 CI 与本地依赖版本漂移。
-      - run: uv sync --locked
-      - run: uv run --locked pytest -q
-      - run: uv run --locked dn-router examples/input-multi.json --time-limit-ms 500
+      # uv.lock 不再入库（见 .gitignore），由 CI 根据 pyproject.toml 现场解析依赖。
+      - run: uv sync
+      - run: uv run pytest -q
+      - run: uv run dn-router examples/input-multi.json --time-limit-ms 500
