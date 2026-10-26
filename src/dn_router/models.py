@@ -71,7 +71,7 @@ class Request(BaseModel):
     allPathDistanceVoList: list[Leg]
     pathDistanceVoList: list[Leg] = Field(default_factory=list)
     # 卸货单位为小时；出发窗口采用同一业务当地时间。
-    unloadingTime: NonNegative = Decimal("0")
+    unloadingTime: NonNegative = Decimal(0)
     earliestShippingDate: datetime
     latestShippingDate: datetime | None = None
     enableTimeWindows: bool = True
@@ -84,7 +84,7 @@ class Request(BaseModel):
     # distance/null/空串优先距离，其余枚举优先车辆数；不读取报价价格。
     quotationModel: Literal["distance", "city", "zipCode", "province", ""] | None = None
     # 仅限制配送点之间的单段距离，非正数表示不限。
-    siteDistanceLimit: Annotated[Decimal, Field(allow_inf_nan=False)] = Decimal("0")
+    siteDistanceLimit: Annotated[Decimal, Field(allow_inf_nan=False)] = Decimal(0)
     sourceLatitude: Latitude
     sourceLongitude: Longitude
     sourceLocation: str

@@ -5,7 +5,6 @@
 """
 
 import argparse
-import json
 import socket
 import sys
 from http import HTTPStatus
@@ -169,13 +168,19 @@ def main(argv: list[str] | None = None) -> int:
     try:
         server = make_server(args.dir, args.host, args.port, args.time_limit_ms)
     except OSError as error:
-        parser.exit(1, f"无法监听 {args.host}:{args.port}（{error.strerror}），可用 --port 换一个端口\n")
+        parser.exit(
+            1,
+            f"无法监听 {args.host}:{args.port}（{error.strerror}），可用 --port 换一个端口\n",
+        )
     host, port = server.server_address[:2]
     print(f"dn-router 可视化服务（目录 {server.RequestHandlerClass.root}）", flush=True)
     for address in _display_hosts(host):
         print(f"  http://{address}:{port}/", flush=True)
     if host in ("127.0.0.1", "localhost"):
-        print(f"远程服务器上运行时，本地执行：ssh -L {port}:localhost:{port} <服务器>", flush=True)
+        print(
+            f"远程服务器上运行时，本地执行：ssh -L {port}:localhost:{port} <服务器>",
+            flush=True,
+        )
     try:
         server.serve_forever()
     except KeyboardInterrupt:

@@ -2,10 +2,12 @@
 import copy
 import json
 from pathlib import Path
+
 import pytest
+
 from dn_router import solve
 from dn_router.models import Request, group_key
-from dn_router.problem import prepare, validate_routes, InputError
+from dn_router.problem import InputError, prepare, validate_routes
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -253,6 +255,7 @@ def test_early_arrival_waits_and_outputs_service_start_only():
 def test_cli_default_array_and_full_report(capsys):
     import sys
     from unittest.mock import patch
+
     from dn_router.cli import main
     for option in ([], ['--report']):
         with patch.object(sys, 'argv', ['dn-router', str(ROOT/'examples/input-feasible.json'), *option]):

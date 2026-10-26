@@ -2,6 +2,7 @@
 import json
 import re
 from decimal import Decimal
+
 import pytest
 
 from dn_router import render_html
@@ -9,7 +10,7 @@ from dn_router import render_html
 
 # 提取内嵌 JSON，检查展示数据而不依赖页面文字匹配。
 def report_data(html):
-    return json.loads(re.search(r'id="report-data">(.*?)</script>', html, re.S).group(1))
+    return json.loads(re.search(r'id="report-data">(.*?)</script>', html, re.DOTALL).group(1))
 
 
 # 恶意字段不能闭合脚本或注入标签，解码后仍应保留原始业务文本。
@@ -24,7 +25,7 @@ def test_embedded_data_cannot_close_script_or_inject_html():
 # 同站坐标必须全部齐全且一致；生成报告不能改写调用方结果。
 def test_stop_coordinates_require_all_orders_to_agree():
     payload = {'dnSiteVoList': [
-        {'orderReleaseId': 'A', 'deliveryLatitude': Decimal('20'), 'deliveryLongitude': Decimal('30')},
+        {'orderReleaseId': 'A', 'deliveryLatitude': Decimal(20), 'deliveryLongitude': Decimal(30)},
         {'orderReleaseId': 'B', 'deliveryLatitude': 21, 'deliveryLongitude': 30}],
         'sourceLatitude': 0, 'sourceLongitude': 0}
     result = {'routes': [{'stops': [{'orderReleaseIds': ['A']}, {'orderReleaseIds': ['A', 'B']},
@@ -53,6 +54,7 @@ def test_malformed_input_collections_and_nonfinite_values():
 # 两种 CLI 输出模式均可同时生成 JSON 与错误状态 HTML。
 def test_cli_generates_json_and_html(tmp_path, monkeypatch, report):
     import sys
+
     from dn_router.cli import main
     source = tmp_path / 'input.json'
     source.write_text('{}')
@@ -67,7 +69,9 @@ def test_cli_generates_json_and_html(tmp_path, monkeypatch, report):
 # HTML 输出路径不得覆盖输入文件，失败后原文件保持完整。
 def test_cli_rejects_overwriting_input_with_html(tmp_path, monkeypatch):
     import sys
+
     import pytest
+
     from dn_router.cli import main
     source = tmp_path / 'input.json'
     source.write_text('{}')
@@ -163,6 +167,7 @@ def served(tmp_path):
     import shutil
     import threading
     from pathlib import Path
+
     from dn_router.server import make_server
     shutil.copy(Path(__file__).resolve().parents[1] / 'examples/input-multi.json', tmp_path)
     (tmp_path / '.hidden').mkdir()

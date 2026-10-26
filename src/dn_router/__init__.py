@@ -2,4 +2,4 @@
 from .solver import solve
 from .visualization import render_html, report_data, write_html
 
-__all__ = ["solve", "render_html", "report_data", "write_html"]
+__all__ = ["render_html", "report_data", "solve", "write_html"]
