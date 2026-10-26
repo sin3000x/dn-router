@@ -163,7 +163,7 @@ CLI 对 INVALID_INPUT / INFEASIBLE_INPUT 返回退出码 2，其他业务结果�
 - `visualization.py` + `report.html`：离线 HTML 报告的数据组装与页面模板。
 - `cli.py`：命令行。
 - `schemas/request.schema.json`：生成的 JSON Schema。
-- `tests/`：业务回归测试；`.github/workflows/tests.yml`：CI。
+- `tests/`：业务回归测试。
 
 参考：
 - https://developers.google.com/optimization/routing/routing_tasks
