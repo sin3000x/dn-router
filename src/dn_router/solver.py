@@ -13,6 +13,7 @@ from typing import Any
 from ortools.constraint_solver import pywrapcp, routing_enums_pb2
 from pydantic import ValidationError
 
+from .initial import build_initial_routes
 from .models import GroupKey, Request, group_key
 from .problem import (
     DEPOT,
@@ -26,13 +27,12 @@ from .problem import (
     scaled,
     validate_routes,
 )
-from .seed import build_seed
 
 Result = dict[str, Any]
 
 # 插入法初解最多占用总预算的五分之一，且不超过 40ms。
-SEED_BUDGET_SHARE = 0.2
-SEED_BUDGET_CAP = 0.04
+INITIAL_BUDGET_SHARE = 0.2
+INITIAL_BUDGET_CAP = 0.04
 
 
 def solve(payload: dict[str, Any], *, time_limit_ms: int = 200) -> Result:
@@ -78,8 +78,10 @@ def solve(payload: dict[str, Any], *, time_limit_ms: int = 200) -> Result:
     source, solver_status, build_ms, search_ms = "direct_fallback", None, 0.0, 0.0
 
     if nodes and perf_counter() < deadline:
-        seed_budget = min(SEED_BUDGET_CAP, budget * SEED_BUDGET_SHARE)
-        routes = build_seed(problem, min(deadline, perf_counter() + seed_budget))
+        initial_budget = min(INITIAL_BUDGET_CAP, budget * INITIAL_BUDGET_SHARE)
+        routes = build_initial_routes(
+            problem, min(deadline, perf_counter() + initial_budget)
+        )
         source = "insertion_fallback"
 
     if nodes:
@@ -204,7 +206,7 @@ class _RoutingModel:
     # ---- 求解与读取 ----
 
     def search(
-        self, seed: Iterable[Route], deadline: float
+        self, initial: Iterable[Route], deadline: float
     ) -> tuple[Any, int | None, float]:
         """从可行初解启动引导局部搜索，每个耗时阶段结束后重算剩余预算。
 
@@ -215,7 +217,7 @@ class _RoutingModel:
         params = _search_parameters(_remaining_ms(deadline))
         self.routing.CloseModelWithParameters(params)
         assignment = self.routing.ReadAssignmentFromRoutes(
-            self._slot_routes(seed), True
+            self._slot_routes(initial), True
         )
         remaining = _remaining_ms(deadline)
         if not assignment or remaining <= 0:

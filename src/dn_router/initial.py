@@ -10,7 +10,7 @@ Delta = tuple[int, int, int]
 NO_GAIN: Delta = (0, 0, 0)
 
 
-def build_seed(problem: Problem, deadline: float) -> list[Route]:
+def build_initial_routes(problem: Problem, deadline: float) -> list[Route]:
     """按扫描序逐单尝试插入已有路线；预算耗尽后仍逐单直送，保证不漏单。"""
     routes: list[Route] = []
     for node in _sweep_order(problem):

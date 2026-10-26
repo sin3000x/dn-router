@@ -158,7 +158,7 @@ CLI 对 INVALID_INPUT / INFEASIBLE_INPUT 返回退出码 2，其他业务结果�
 
 - `src/dn_router/models.py`：输入类型与结构校验。
 - `problem.py`：矩阵、单位、预检查、独立路线审计。
-- `seed.py`：有界可行初解构造。
+- `initial.py`：有界可行初解构造。
 - `solver.py`：OR-Tools 模型与输出。
 - `visualization.py` + `report.html`：离线 HTML 报告的数据组装与页面模板。
 - `cli.py`：命令行。
