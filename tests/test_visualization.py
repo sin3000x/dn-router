@@ -51,7 +51,7 @@ def test_malformed_input_collections_and_nonfinite_values():
 
 @pytest.mark.parametrize('report', [False, True])
 # 两种 CLI 输出模式均可同时生成 JSON 与错误状态 HTML。
-def test_cli_generates_json_and_html(tmp_path, monkeypatch, report):
+def test_cli_generates_json_and_html(tmp_path, monkeypatch, capsys, report):
     import sys
     from dn_router.cli import main
     source = tmp_path / 'input.json'
@@ -59,6 +59,7 @@ def test_cli_generates_json_and_html(tmp_path, monkeypatch, report):
     output, html = tmp_path / 'result.json', tmp_path / 'result.html'
     monkeypatch.setattr(sys, 'argv', ['dn-router', str(source), *(['--report'] if report else []), '--output', str(output), '--html', str(html)])
     assert main() == 2
+    assert json.loads(capsys.readouterr().err)['status'] == 'INVALID_INPUT'
     body = json.loads(output.read_text())
     assert body['status'] == 'INVALID_INPUT' if report else body == []
     assert report_data(html.read_text())['result']['status'] == 'INVALID_INPUT'

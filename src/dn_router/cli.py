@@ -60,7 +60,8 @@ def main() -> int:
         }
 
     # 默认 stdout 只交付路线数组，诊断写入 stderr；--report 输出完整报告。
-    if not args.report:
+    # 报告写入文件时同样把诊断写入 stderr，避免终端只看到退出码。
+    if not args.report or args.output:
         diagnostics = {key: value for key, value in result.items() if key != "routes"}
         print(json.dumps(diagnostics, ensure_ascii=False), file=sys.stderr)
     text = (
