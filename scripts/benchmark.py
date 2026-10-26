@@ -66,11 +66,21 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--runs", type=int, default=5)
     parser.add_argument("--dn", type=int, default=100)
-    parser.add_argument("--time-limit-ms", type=int, default=200)
+    # 可给多个预算，观察同一批样本的目标值随时限的变化。
+    parser.add_argument("--time-limit-ms", type=int, nargs="+", default=[200])
     args = parser.parse_args()
+    payloads = [generate(args.dn, seed) for seed in range(args.runs)]
+    summaries = [summarize(args, payloads, budget) for budget in args.time_limit_ms]
+    output = summaries[0] if len(summaries) == 1 else summaries
+    print(json.dumps(output, indent=2))
+
+
+def summarize(
+    args: argparse.Namespace, payloads: list[dict[str, Any]], budget: int
+) -> dict[str, Any]:
     records = []
-    for seed in range(args.runs):
-        result = solve(generate(args.dn, seed), time_limit_ms=args.time_limit_ms)
+    for payload in payloads:
+        result = solve(payload, time_limit_ms=budget)
         assert (
             result["status"] == "FEASIBLE" and result["servedOrderCount"] == args.dn
         ), result
@@ -87,19 +97,16 @@ def main() -> None:
             }
         )
     elapsed = [x["elapsedMs"] for x in records]
-    print(
-        json.dumps(
-            {
-                "dn": args.dn,
-                "runs": args.runs,
-                "budgetMs": args.time_limit_ms,
-                "medianMs": statistics.median(elapsed),
-                "maxMs": max(elapsed),
-                "records": records,
-            },
-            indent=2,
-        )
-    )
+    return {
+        "dn": args.dn,
+        "runs": args.runs,
+        "budgetMs": budget,
+        "medianMs": statistics.median(elapsed),
+        "maxMs": max(elapsed),
+        "meanVehicles": statistics.mean(x["vehicleCount"] for x in records),
+        "meanDistance": round(statistics.mean(x["totalDistance"] for x in records), 3),
+        "records": records,
+    }
 
 
 if __name__ == "__main__":
