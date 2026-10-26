@@ -410,10 +410,15 @@ class _RoutingModel:
         # 站间距离超限的有向边直接禁用；仓库到首站不受此限制。
         limit = request.siteDistanceLimit * DIST_SCALE
         if limit > 0:
+            # 每个节点一次性移除全部禁用后继，避免逐条跨越 Python/C++ 边界。
+            index = [self._index(node) for node in range(self.sink)]
             for i in range(1, self.sink):
-                for j in range(1, self.sink):
-                    if i != j and problem.distance[i][j] > limit:
-                        routing.NextVar(self._index(i)).RemoveValue(self._index(j))
+                row = problem.distance[i]
+                banned = [
+                    index[j] for j in range(1, self.sink) if i != j and row[j] > limit
+                ]
+                if banned:
+                    routing.NextVar(index[i]).RemoveValues(banned)
 
         # 总距离含首段，因此“站间和 ≤ 首段”等价于“总距离 ≤ 两倍首段”。
         if request.distanceLessThanFirstLeg:

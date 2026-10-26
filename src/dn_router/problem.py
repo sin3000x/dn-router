@@ -85,17 +85,6 @@ class Problem:
             if volume <= vehicle.totalVolume and weight <= vehicle.totalWeight
         ]
 
-    def smallest_vehicle(self, nodes: Sequence[int]) -> int | None:
-        """路线满足全部约束时返回能装下的最小车型，否则返回 None。"""
-        vehicles = self.fitting_vehicles(nodes)
-        if not vehicles:
-            return None
-        try:
-            self.check_route(nodes)
-        except InputError:
-            return None
-        return vehicles[0]
-
     def schedule(self, nodes: Sequence[int]) -> list[Visit]:
         """按最早出仓顺推时间表，每个 DN 对应一个 Visit。
 
@@ -123,12 +112,19 @@ class Problem:
         mode = self.request.lonAndLatCombination
         return len({group_key(self.dn(i), mode) for i in nodes})
 
+    def within_stop_limit(self, nodes: Iterable[int]) -> bool:
+        limit = self.request.maxSiteQty
+        return not limit or self.distinct_stops(nodes) <= limit
+
     def check_route(self, nodes: Sequence[int]) -> None:
         """检查容量以外的路线约束，违规时抛错。"""
-        request = self.request
-        if request.maxSiteQty and self.distinct_stops(nodes) > request.maxSiteQty:
+        if not self.within_stop_limit(nodes):
             raise InputError("distinct stop limit violation")
+        self.check_sequence(nodes)
 
+    def check_sequence(self, nodes: Sequence[int]) -> None:
+        """检查与访问顺序相关的约束：站间距离、首段关联距离和时间窗。"""
+        request = self.request
         between = [self.distance[a][b] for a, b in pairwise(nodes)]
         limit = request.siteDistanceLimit * DIST_SCALE
         if limit > 0 and any(d > limit for d in between):
