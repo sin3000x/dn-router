@@ -1,4 +1,4 @@
-# 命令行入口：读取请求、求解，并分别输出业务路线、诊断信息及离线报告。
+# 命令行入口：读取请求、求解，并分别输出业务路线、诊断信息及离线报告；serve 子命令启动在线可视化服务。
 import argparse
 import json
 import sys
@@ -13,7 +13,10 @@ FAILURE_STATUSES = frozenset({"INVALID_INPUT", "INFEASIBLE_INPUT"})
 
 
 def _parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Open-route mandatory-DN planner")
+    parser = argparse.ArgumentParser(
+        description="Open-route mandatory-DN planner",
+        epilog="Run `dn-router serve --help` for the web visualization service.",
+    )
     parser.add_argument("input", help="JSON input path, or - for stdin")
     parser.add_argument("--time-limit-ms", type=int, default=200)
     parser.add_argument("--output", "-o")
@@ -28,10 +31,34 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
+def solve_text(raw: str, time_limit_ms: int) -> tuple[Any, dict[str, Any]]:
+    """解析 JSON 文本并求解；解析失败时返回 INVALID_INPUT 结果而不是抛错。
+
+    读取失败时也保留空请求，供错误状态的报告使用。
+    """
+    payload: Any = {}
+    try:
+        # JSON 小数直接解析为 Decimal，避免先转浮点造成精度损失。
+        payload = json.loads(raw, parse_float=Decimal)
+        result = solve(payload, time_limit_ms=time_limit_ms)
+    except ValueError as error:
+        result = {
+            "status": "INVALID_INPUT",
+            "errors": [{"message": str(error)}],
+            "routes": [],
+        }
+    return payload, result
+
+
 # 返回码 2 表示输入无效或整批不可行；其他业务状态返回 0。
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
+    argv = sys.argv[1:] if argv is None else argv
+    if argv[:1] == ["serve"]:
+        from .server import main as serve_main
+
+        return serve_main(argv[1:])
     parser = _parser()
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     # 先检查输出路径，防止 HTML 覆盖输入文件或 JSON 结果。
     if args.html:
         html = Path(args.html).resolve()
@@ -41,23 +68,21 @@ def main() -> int:
         if any(html == Path(p).resolve() for p in others):
             parser.error("--html must differ from the input and JSON output paths")
 
-    # 读取失败时也保留空请求，供错误状态的 HTML 报告使用。
-    payload: Any = {}
     try:
         raw = (
             sys.stdin.read()
             if args.input == "-"
             else Path(args.input).read_text(encoding="utf-8")
         )
-        # JSON 小数直接解析为 Decimal，避免先转浮点造成精度损失。
-        payload = json.loads(raw, parse_float=Decimal)
-        result = solve(payload, time_limit_ms=args.time_limit_ms)
     except (ValueError, OSError) as error:
+        payload: Any = {}
         result = {
             "status": "INVALID_INPUT",
             "errors": [{"message": str(error)}],
             "routes": [],
         }
+    else:
+        payload, result = solve_text(raw, args.time_limit_ms)
 
     # 默认 stdout 只交付路线数组，诊断写入 stderr；--report 输出完整报告。
     if not args.report:

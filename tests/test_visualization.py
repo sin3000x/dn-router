@@ -155,3 +155,50 @@ def test_public_route_contract_keeps_eta_and_counts_shared_unloading_once():
     segments = data['timeline']['routes'][0]['segments']
     assert sum(s['end'] - s['start'] for s in segments if s['kind'] == 'unload') == 3600
     assert sum(s['end'] - s['start'] for s in segments if s['kind'] == 'travel') == 1200
+
+
+# 在线服务：页面以 null 启动；可列出并求解目录内文件、接收上传，拒绝越界路径。
+@pytest.fixture
+def served(tmp_path):
+    import shutil
+    import threading
+    from pathlib import Path
+    from dn_router.server import make_server
+    shutil.copy(Path(__file__).resolve().parents[1] / 'examples/input-multi.json', tmp_path)
+    (tmp_path / '.hidden').mkdir()
+    (tmp_path / '.hidden' / 'skip.json').write_text('{}')
+    (tmp_path.parent / 'outside.json').write_text('{}')
+    server = make_server(tmp_path, port=0, time_limit_ms=200)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    yield f'http://127.0.0.1:{server.server_address[1]}'
+    server.shutdown()
+    server.server_close()
+
+
+def fetch(url, body=None):
+    from urllib.error import HTTPError
+    from urllib.request import urlopen
+    try:
+        with urlopen(url, data=body) as response:
+            return response.status, response.read().decode()
+    except HTTPError as error:
+        return error.code, error.read().decode()
+
+
+def test_server_page_files_and_solve(served):
+    status, html = fetch(served + '/')
+    assert status == 200 and report_data(html) is None
+    files = json.loads(fetch(served + '/api/files')[1])['files']
+    assert [f['path'] for f in files] == ['input-multi.json']
+    status, body = fetch(served + '/api/solve?file=input-multi.json&time_limit_ms=200')
+    data = json.loads(body)
+    assert status == 200 and data['result']['status'] == 'FEASIBLE'
+    assert data['output']['routes'][0]['siteDetails'] and data['timeline'] is not None
+    assert data['source'] == {'file': 'input-multi.json', 'timeLimitMs': 200}
+
+
+def test_server_rejects_paths_outside_root_and_reports_bad_uploads(served):
+    assert fetch(served + '/api/solve?file=../outside.json')[0] == 400
+    assert fetch(served + '/api/solve?file=missing.json')[0] == 400
+    status, body = fetch(served + '/api/solve', b'{not json')
+    assert status == 200 and json.loads(body)['result']['status'] == 'INVALID_INPUT'

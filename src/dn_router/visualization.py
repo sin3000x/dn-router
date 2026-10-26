@@ -1,4 +1,4 @@
-"""将求解结果渲染为自包含的离线 HTML，包含地图、停靠明细和时间轴。"""
+"""整理求解结果的展示数据，并渲染为自包含的离线 HTML 或供在线服务使用。"""
 
 import json
 import math
@@ -14,7 +14,7 @@ from .problem import prepare
 Json = dict[str, Any]
 Coordinate = list[float]
 
-# 模板包含离线样式、页面结构和交互脚本；报告数据通过占位符嵌入。
+# 模板包含样式、页面结构和交互脚本；离线报告通过占位符嵌入数据，在线服务嵌入 null。
 _TEMPLATE = files(__package__).joinpath("report.html")
 
 
@@ -178,8 +178,8 @@ def _finite(value: Any) -> Any:
     return value
 
 
-def render_html(payload: Json, result: Json) -> str:
-    """直接嵌入数据与前端资源，生成无需联网的报告。"""
+def report_data(payload: Json, result: Json) -> Json:
+    """组装页面所需的路线、坐标、车型与时间轴数据，结果可直接严格 JSON 序列化。"""
 
     # 错误输入也要能展示状态，只提取结构合法的字典记录。
     def records(key: str) -> list[Json]:
@@ -228,16 +228,32 @@ def render_html(payload: Json, result: Json) -> str:
         "vehicles": records("vehicleTypeVoList"),
         "timeline": _timeline(routes),
     }
-    encoded = json.dumps(
-        _finite(data),
+    # 往返一次统一数值类型，在线服务可直接再次序列化。
+    return json.loads(dumps(data))
+
+
+def dumps(value: Any) -> str:
+    """严格 JSON 序列化：Decimal 转浮点，非有限数值转 null。"""
+    return json.dumps(
+        _finite(value),
         ensure_ascii=False,
         allow_nan=False,
         default=lambda v: float(v) if isinstance(v, Decimal) else str(v),
     )
+
+
+def render_page(data: Json | None) -> str:
+    """把数据嵌入页面模板；data 为 None 时页面以在线服务模式启动。"""
+    encoded = dumps(data)
     # 嵌入前转义 HTML 特殊字符，防止数据提前闭合 script 标签。
     for char, escaped in (("&", "\\u0026"), ("<", "\\u003c"), (">", "\\u003e")):
         encoded = encoded.replace(char, escaped)
     return _TEMPLATE.read_text(encoding="utf-8").replace("__REPORT_DATA__", encoded)
+
+
+def render_html(payload: Json, result: Json) -> str:
+    """直接嵌入数据与前端资源，生成无需联网的报告。"""
+    return render_page(report_data(payload, result))
 
 
 def write_html(payload: Json, result: Json, path: str | Path) -> None:
