@@ -1,57 +1,55 @@
 """在有限预算内构造可行插入初解，再交给 OR-Tools 优化。"""
+
 from time import perf_counter
-from .models import group_key
-from .problem import DIST_SCALE, InputError
+
+from .problem import Problem, Route
+
+# 增量成本元组，按目标优先级逐位比较；全零表示与另开一辆直送车持平。
+Delta = tuple[int, int, int]
+NO_GAIN: Delta = (0, 0, 0)
 
 
-# 逐单尝试插入已有路线；预算耗尽后仍逐单直送，保证不漏单。
-def build_seed(p, deadline):
-    routes = []
-    count_first = p.request.quotationModel in ('city','zipCode','province')
-    # 开放路线长度只累计仓库到首站及站间路段，不计返仓。
-    def length(nodes):
-        return sum(p.distance[a][b] for a,b in zip([0]+nodes,nodes))
-    # 候选插入同时检查车型、站点数、距离约束和完整时间表。
-    def feasible(nodes):
-        kinds = p.types_for(nodes)
-        if not kinds:
-            return None
-        if p.request.maxSiteQty and len({group_key(p.dns[i-1],p.request.lonAndLatCombination) for i in nodes}) > p.request.maxSiteQty:
-            return None
-        between = [p.distance[a][b] for a,b in zip(nodes,nodes[1:])]
-        if p.request.siteDistanceLimit > 0 and any(d > p.request.siteDistanceLimit*DIST_SCALE for d in between):
-            return None
-        if p.request.distanceLessThanFirstLeg and sum(between) > p.distance[0][nodes[0]]:
-            return None
-        try:
-            p.schedule(nodes)
-        except InputError:
-            return None
-        # 车型已按等级排序，选择能够装下整条路线的最小等级。
-        return kinds[0]
-    for node in range(1,len(p.dns)+1):
-        single_kind = p.types_for([node])[0]
-        best = None
-        # 以另开一辆直送车为比较基准，只接受目标严格改善的插入。
-        best_delta = (0,0,0)
-        for r,(nodes,kind) in enumerate(routes):
-            if perf_counter() >= deadline:
-                break
-            for pos in range(len(nodes)+1):
-                candidate = nodes[:pos]+[node]+nodes[pos:]
-                chosen = feasible(candidate)
-                if chosen is None:
-                    continue
-                # 合并后减去旧路线和新单直送的成本，按目标优先级比较增量元组。
-                delta_distance = length(candidate)-length(nodes)-length([node])
-                delta_rank = chosen-kind-single_kind-1
-                delta = (-1,delta_distance,delta_rank) if count_first else (delta_distance,delta_rank,0)
-                if delta < best_delta:
-                    best_delta, best = delta,(r,candidate,chosen)
-        if best:
-            r,nodes,kind=best
-            routes[r]=(nodes,kind)
-        else:
+def build_seed(problem: Problem, deadline: float) -> list[Route]:
+    """逐单尝试插入已有路线；预算耗尽后仍逐单直送，保证不漏单。"""
+    routes: list[Route] = []
+    for node in range(1, len(problem.dns) + 1):
+        direct = Route([node], problem.fitting_vehicles([node])[0])
+        best = _best_insertion(problem, routes, direct, deadline)
+        if best is None:
             # 未找到改善插入或预算已耗尽时，为该单保留可行直送路线。
-            routes.append(([node],single_kind))
+            routes.append(direct)
+        else:
+            index, route = best
+            routes[index] = route
     return routes
+
+
+def _best_insertion(
+    problem: Problem, routes: list[Route], direct: Route, deadline: float
+) -> tuple[int, Route] | None:
+    """在所有路线的所有位置中找目标严格优于另开直送车的插入。"""
+    (node,) = direct.nodes
+    best_delta, best = NO_GAIN, None
+    for index, route in enumerate(routes):
+        if perf_counter() >= deadline:
+            break
+        for position in range(len(route.nodes) + 1):
+            nodes = route.nodes[:position] + [node] + route.nodes[position:]
+            vehicle = problem.smallest_vehicle(nodes)
+            if vehicle is None:
+                continue
+            delta = _delta(problem, Route(nodes, vehicle), route, direct)
+            if delta < best_delta:
+                best_delta, best = delta, (index, Route(nodes, vehicle))
+    return best
+
+
+def _delta(problem: Problem, merged: Route, old: Route, direct: Route) -> Delta:
+    """合并后成本减去旧路线和直送路线成本。"""
+    distance = problem.length(merged.nodes)
+    distance -= problem.length(old.nodes) + problem.length(direct.nodes)
+    # 每辆车的等级成本是车型下标加一，与求解器中的车辆固定成本一致。
+    rank = merged.vehicle - old.vehicle - direct.vehicle - 1
+    if problem.request.count_first:
+        return (-1, distance, rank)
+    return (distance, rank, 0)

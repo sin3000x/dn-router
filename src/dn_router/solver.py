@@ -1,214 +1,440 @@
-"""用 OR-Tools 固定车型容量模型求解开放路线，保留完整可行兜底方案。"""
+"""用 OR-Tools 固定车型容量模型求解开放路线，保留完整可行兜底方案。
+
+求解流程：校验输入 → 逐单直送兜底 → 插入法初解 → OR-Tools 局部搜索 → 独立审计。
+任一阶段预算不足时都会保留上一阶段的可行方案。
+"""
+
 from collections import defaultdict
+from collections.abc import Callable, Iterable
 from datetime import timedelta
 from time import perf_counter
-from pydantic import ValidationError
+from typing import Any
+
 from ortools.constraint_solver import pywrapcp, routing_enums_pb2
-from .models import Request, group_key
+from pydantic import ValidationError
+
+from .models import GroupKey, Request, group_key
+from .problem import (
+    DEPOT,
+    DIST_SCALE,
+    LIMIT,
+    LOAD_SCALE,
+    InputError,
+    Problem,
+    Route,
+    prepare,
+    scaled,
+    validate_routes,
+)
 from .seed import build_seed
-from .problem import prepare, validate_routes, scaled, InputError, DIST_SCALE, LOAD_SCALE, LIMIT
+
+Result = dict[str, Any]
+
+# 插入法初解最多占用总预算的五分之一，且不超过 40ms。
+SEED_BUDGET_SHARE = 0.2
+SEED_BUDGET_CAP = 0.04
 
 
-def solve(payload: dict, *, time_limit_ms: int = 200) -> dict:
+def solve(payload: dict[str, Any], *, time_limit_ms: int = 200) -> Result:
     """预算覆盖整体计算，尽力遵守；原生建模调用不能保证在任意时点中断。"""
     started = perf_counter()
-    if isinstance(time_limit_ms, bool) or not isinstance(time_limit_ms, int) or time_limit_ms < 1:
+    is_int = isinstance(time_limit_ms, int) and not isinstance(time_limit_ms, bool)
+    if not is_int or time_limit_ms < 1:
         raise ValueError("time_limit_ms must be a positive integer")
+    budget = time_limit_ms / 1000
+    deadline = started + budget
+
+    def finish(**fields: Any) -> Result:
+        return {**fields, "elapsedMs": _ms(perf_counter() - started)}
+
     try:
         request = Request.model_validate(payload)
-        p = prepare(request)
+        problem = prepare(request)
     except (ValidationError, InputError) as error:
-        return {"status": "INVALID_INPUT", "routes": [], "errors": [{"code": "INVALID_INPUT", "message": str(error)}],
-                "elapsedMs": round((perf_counter()-started)*1000, 3)}
-    n, k = len(p.dns), len(p.vehicles)
-    base_result = {"taskNo": request.taskNo, "rejectedOrders": p.rejected, "warnings": p.warnings}
+        errors = [{"code": "INVALID_INPUT", "message": str(error)}]
+        return finish(status="INVALID_INPUT", routes=[], errors=errors)
+
+    base: Result = {
+        "taskNo": request.taskNo,
+        "rejectedOrders": problem.rejected,
+        "warnings": problem.warnings,
+    }
+    nodes = range(1, len(problem.dns) + 1)
+
     # 任一有效 DN 超出全部车型容量时整批不可行，不能通过丢弃该单生成路线。
-    capacity_errors = [{"code": "DN_EXCEEDS_ALL_VEHICLES", "orderReleaseId": d.orderReleaseId}
-                       for i, d in enumerate(p.dns, 1) if not p.types_for([i])]
-    if capacity_errors:
-        return {**base_result, "status": "INFEASIBLE_INPUT", "routes": [], "errors": capacity_errors,
-                "elapsedMs": round((perf_counter()-started)*1000, 3)}
-    # 逐单直送保证完整覆盖；插入初解和原生搜索均可在预算不足时回退。
-    fallback = [([i], p.types_for([i])[0]) for i in range(1, n+1)]
-    routes, solver_status, source = fallback, None, "direct_fallback"
-    if n and (perf_counter()-started)*1000 < time_limit_ms:
-        routes = build_seed(p, min(started+time_limit_ms/1000, perf_counter()+min(0.04,time_limit_ms/5000)))
+    oversized = [
+        {
+            "code": "DN_EXCEEDS_ALL_VEHICLES",
+            "orderReleaseId": problem.dn(i).orderReleaseId,
+        }
+        for i in nodes
+        if not problem.fitting_vehicles([i])
+    ]
+    if oversized:
+        return finish(**base, status="INFEASIBLE_INPUT", routes=[], errors=oversized)
+
+    # 逐单直送保证完整覆盖，之后每一步都只在得到可行解时替换。
+    routes = [Route([i], problem.fitting_vehicles([i])[0]) for i in nodes]
+    source, solver_status, build_ms, search_ms = "direct_fallback", None, 0.0, 0.0
+
+    if nodes and perf_counter() < deadline:
+        seed_budget = min(SEED_BUDGET_CAP, budget * SEED_BUDGET_SHARE)
+        routes = build_seed(problem, min(deadline, perf_counter() + seed_budget))
         source = "insertion_fallback"
-    # 车辆槽位是模型表示：距离优先每车型最多 N 辆；车辆数优先以上界初解车数为限。
-    slots_per_type = len(routes) if fixed_mode(request) else n
-    vehicle_kinds = [kind for kind in range(k) for _ in range(slots_per_type)]
-    m = len(vehicle_kinds)
-    # 把业务路线分配给对应车型槽位，未用槽位保留为空，供原生求解器导入。
-    seed_routes = [[] for _ in range(m)]
-    used_per_type = [0]*k
-    for nodes, kind in routes:
-        seed_routes[kind*slots_per_type+used_per_type[kind]] = nodes
-        used_per_type[kind] += 1
-    build_ms = search_ms = 0.0
-    if n:
+
+    if nodes:
+        weights = _ObjectiveWeights(problem)
+        if weights.overflows:
+            message = "distance magnitude too large"
+            errors = [{"code": "OBJECTIVE_OVERFLOW", "message": message}]
+            return finish(**base, status="INVALID_INPUT", routes=[], errors=errors)
+
         build_started = perf_counter()
-        # 节点 0 是仓库，N+1 是虚拟终点；到终点距离为零，实现不返仓。
-        manager = pywrapcp.RoutingIndexManager(n+2, m, [0]*m, [n+1]*m)
-        routing = pywrapcp.RoutingModel(manager)
-        cp = routing.solver()
-        sink = n+1
-        # 回调接收求解器索引，必须先映射到业务节点编号。
-        def distance(a, b):
-            i, j = manager.IndexToNode(a), manager.IndexToNode(b)
-            return 0 if j == sink or i == sink else p.distance[i][j]
-        distance_cb = routing.RegisterTransitCallback(distance)
-        # 用全局上界构造严格词典序权重：高优先级的一单位超过所有低优先级成本。
-        bound_distance = n * max(map(max, p.distance))
-        rank_bound = n*k
-        distance_multiplier = rank_bound+1
-        fixed = (bound_distance*distance_multiplier + rank_bound + 1) if request.quotationModel in ("city", "zipCode", "province") else 0
-        if n*fixed + bound_distance*distance_multiplier + rank_bound >= LIMIT:
-            return {**base_result, "status": "INVALID_INPUT", "routes": [],
-                    "errors": [{"code": "OBJECTIVE_OVERFLOW", "message": "distance magnitude too large"}]}
-        cost_cb = routing.RegisterTransitCallback(lambda a, b: distance(a, b)*distance_multiplier)
-        routing.SetArcCostEvaluatorOfAllVehicles(cost_cb)
-        for v in range(m):
-            routing.SetFixedCostOfVehicle(fixed+vehicle_kinds[v]+1, v)
-        routing.AddDimension(distance_cb, 0, bound_distance, True, "Distance")
-        dist_dim = routing.GetDimensionOrDie("Distance")
-        # 体积和重量分别建容量维度，但每个槽位绑定同一种车型的两项容量。
-        for name, dn_field, vehicle_field in (("Volume", "totalGrossVolume", "totalVolume"), ("Weight", "totalGrossWeight", "totalWeight")):
-            demand = [0] + [scaled(getattr(d, dn_field), LOAD_SCALE) for d in p.dns] + [0]
-            # 通过默认参数固定本轮 demand，避免循环闭包读取下一轮的载荷列表。
-            cb = routing.RegisterUnaryTransitCallback(lambda a, values=demand: values[manager.IndexToNode(a)])
-            capacities = [scaled(getattr(p.vehicles[kind], vehicle_field), LOAD_SCALE) for kind in vehicle_kinds]
-            routing.AddDimensionWithVehicleCapacity(cb, 0, capacities, True, name)
-        # 实际卸货按 siteCode 分组，独立于业务的站点计数口径。
-        unload_groups = defaultdict(list)
-        for i, dn in enumerate(p.dns, 1):
-            unload_groups[dn.siteCode].append(manager.NodeToIndex(i))
-        shared_sites = any(len(g) > 1 for g in unload_groups.values())
-        # 离开实际站点时计一次卸货；同站 DN 内部不加卸货或行驶时间。
-        def transit(a, b):
-            i, j = manager.IndexToNode(a), manager.IndexToNode(b)
-            same_site = 1 <= i <= n and 1 <= j <= n and p.dns[i-1].siteCode == p.dns[j-1].siteCode
-            service = p.service if 1 <= i <= n and not same_site else 0
-            return service + (0 if j == sink or i == sink else p.duration[i][j])
-        time_cb = routing.RegisterTransitCallback(transit)
-        # 时间松弛量允许提前到达后等待，累计值表示开始卸货时间。
-        routing.AddDimension(time_cb, p.horizon, p.horizon, False, "Time")
-        time_dim = routing.GetDimensionOrDie("Time")
-        for i in range(1, n+1):
-            time_dim.CumulVar(manager.NodeToIndex(i)).SetRange(*p.windows[i])
-        for v in range(m):
-            time_dim.CumulVar(routing.Start(v)).SetRange(0, p.latest_start)
-        # 同车同站 DN 的序位跨度约束保证连续停靠，时间约束保证共用 eta。
-        if shared_sites:
-            order_cb = routing.RegisterTransitCallback(lambda a, b: 1)
-            routing.AddDimension(order_cb, 0, n+1, True, "Position")
-            position = routing.GetDimensionOrDie("Position")
-            for group in unload_groups.values():
-                if len(group) < 2:
-                    continue
-                counts = [cp.Sum([cp.IsEqualCstVar(routing.VehicleVar(i), v) for i in group]).Var() for v in range(m)]
-                for i in group:
-                    count_on_vehicle = cp.Element(counts, routing.VehicleVar(i))
-                    for j in group:
-                        if i == j:
-                            continue
-                        same = cp.IsEqualVar(routing.VehicleVar(i), routing.VehicleVar(j))
-                        # 同车同站序位跨度不超过本车该站 DN 数减一，迫使它们组成连续块。
-                        cp.Add(position.CumulVar(i)-position.CumulVar(j) <= count_on_vehicle-1+n*(1-same))
-                        cp.Add(time_dim.CumulVar(i)-time_dim.CumulVar(j) <= p.horizon*(1-same))
-        # 站点计数按请求口径去重：单元素组使用计数维度，多元素组按车辆是否访问计数。
-        groups = defaultdict(list)
-        for i, dn in enumerate(p.dns, 1):
-            groups[group_key(dn, request.lonAndLatCombination)].append(manager.NodeToIndex(i))
-        if request.maxSiteQty and request.maxSiteQty < len(groups):
-            if all(len(g) == 1 for g in groups.values()):
-                count_cb = routing.RegisterUnaryTransitCallback(lambda a: int(1 <= manager.IndexToNode(a) <= n))
-                routing.AddDimension(count_cb, 0, request.maxSiteQty, True, "StopCount")
-            else:
-                for v in range(m):
-                    present = [cp.Max([cp.IsEqualCstVar(routing.VehicleVar(i), v) for i in g]) for g in groups.values()]
-                    cp.Add(cp.Sum(present) <= request.maxSiteQty)
+        # 距离优先时每车型最多 N 辆；车辆数优先时以初解车数为上界。
+        slots_per_vehicle = len(routes) if request.count_first else len(nodes)
+        model = _RoutingModel(problem, weights, slots_per_vehicle)
+        solution, solver_status, search_ms = model.search(routes, deadline)
+        build_ms = (perf_counter() - build_started) * 1000 - search_ms
+        if solution:
+            routes, source = model.routes(solution), "ortools"
+
+    # 输出前统一独立审计，不依赖求解器约束是否被正确编码。
+    validate_routes(problem, routes)
+    output = [_route_output(problem, route) for route in routes]
+    total_distance = sum(problem.length(r.nodes) for r in routes) / DIST_SCALE
+    policy = "vehicles_distance_type" if request.count_first else "distance_type"
+    # 有限时间搜索只能声明可行，不能据此声称全局最优。
+    return finish(
+        **base,
+        status="FEASIBLE" if nodes else "NO_ELIGIBLE_ORDERS",
+        solutionSource=source,
+        routes=output,
+        vehicleCount=len(output),
+        servedOrderCount=len(nodes),
+        totalDistance=total_distance,
+        objectivePolicy=policy,
+        optimalityProven=False,
+        solverStatus=solver_status,
+        timingsMs={"buildAndSeed": round(build_ms, 3), "search": round(search_ms, 3)},
+    )
+
+
+def _ms(seconds: float) -> float:
+    return round(seconds * 1000, 3)
+
+
+def _remaining_ms(deadline: float) -> float:
+    return (deadline - perf_counter()) * 1000
+
+
+def _route_output(problem: Problem, route: Route) -> Result:
+    """生成公开路线对象；eta 取最早出仓时间表中的开始卸货时间。"""
+    departure = problem.request.earliestShippingDate
+
+    def timestamp(seconds: int) -> str:
+        return (departure + timedelta(seconds=seconds)).isoformat(sep=" ")
+
+    dns = [problem.dn(i) for i in route.nodes]
+    visits = problem.schedule(route.nodes)
+    return {
+        "dist": problem.length(route.nodes) / DIST_SCALE,
+        "siteAddresses": [d.orderReleaseId for d in dns],
+        "departure_date": timestamp(0),
+        "siteDetails": [
+            {"siteAddress": d.orderReleaseId, "eta": timestamp(visit.start)}
+            for d, visit in zip(dns, visits, strict=True)
+        ],
+        "vehicle": problem.vehicles[route.vehicle].vehicleTypeName,
+        "volume": float(sum(d.totalGrossVolume for d in dns)),
+        "weight": float(sum(d.totalGrossWeight for d in dns)),
+    }
+
+
+class _ObjectiveWeights:
+    """用全局上界构造严格词典序权重：高优先级的一单位超过所有低优先级成本。
+
+    目标从高到低：车辆数（仅车辆数优先模式）、总距离、车型等级之和。
+    """
+
+    def __init__(self, problem: Problem) -> None:
+        n, k = len(problem.dns), len(problem.vehicles)
+        self.max_distance = n * max(map(max, problem.distance))
+        max_rank = n * k
+        self.distance_weight = max_rank + 1
+        max_cost = self.max_distance * self.distance_weight + max_rank
+        self.per_vehicle = max_cost + 1 if problem.request.count_first else 0
+        self.overflows = n * self.per_vehicle + max_cost >= LIMIT
+
+
+class _RoutingModel:
+    """OR-Tools 路由模型。
+
+    每种车型预留 slots_per_vehicle 个车辆槽位，槽位按车型分块排列。
+    节点 N+1 是虚拟终点，进出终点的距离和耗时为零，实现开放路线。
+    """
+
+    def __init__(
+        self, problem: Problem, weights: _ObjectiveWeights, slots_per_vehicle: int
+    ) -> None:
+        self.problem = problem
+        self.slots_per_vehicle = slots_per_vehicle
+        self.slot_vehicles = [
+            vehicle
+            for vehicle in range(len(problem.vehicles))
+            for _ in range(slots_per_vehicle)
+        ]
+        slots = len(self.slot_vehicles)
+        self.sink = len(problem.dns) + 1
+        self.manager = pywrapcp.RoutingIndexManager(
+            self.sink + 1, slots, [DEPOT] * slots, [self.sink] * slots
+        )
+        self.routing = pywrapcp.RoutingModel(self.manager)
+        self.solver = self.routing.solver()
+        # 求解器回调收到的是内部索引，统一先映射到节点编号。
+        index_count = self.manager.GetNumberOfIndices()
+        self.node_of = [self.manager.IndexToNode(i) for i in range(index_count)]
+
+        self._add_cost_and_distance(weights)
+        self._add_capacities()
+        self._add_time()
+        self._add_shared_site_blocks()
+        self._add_stop_limit()
+        self._add_distance_limits()
+
+    # ---- 求解与读取 ----
+
+    def search(
+        self, seed: Iterable[Route], deadline: float
+    ) -> tuple[Any, int | None, float]:
+        """从可行初解启动引导局部搜索，每个耗时阶段结束后重算剩余预算。
+
+        返回 (解或 None, 求解器状态, 搜索耗时 ms)。
+        """
+        if _remaining_ms(deadline) <= 0:
+            return None, None, 0.0
+        params = _search_parameters(_remaining_ms(deadline))
+        self.routing.CloseModelWithParameters(params)
+        assignment = self.routing.ReadAssignmentFromRoutes(
+            self._slot_routes(seed), True
+        )
+        remaining = _remaining_ms(deadline)
+        if not assignment or remaining <= 0:
+            return None, self.routing.status(), 0.0
+
+        params.time_limit.FromMilliseconds(max(1, int(remaining)))
+        started = perf_counter()
+        solution = self.routing.SolveFromAssignmentWithParameters(assignment, params)
+        search_ms = (perf_counter() - started) * 1000
+        return solution, self.routing.status(), search_ms
+
+    def routes(self, solution: Any) -> list[Route]:
+        """读取非空路线，并为每条路线选最小可行车型。"""
+        routes: list[Route] = []
+        for slot in range(len(self.slot_vehicles)):
+            index, nodes = self.routing.Start(slot), []
+            while not self.routing.IsEnd(index):
+                if node := self.node_of[index]:
+                    nodes.append(node)
+                index = solution.Value(self.routing.NextVar(index))
+            if nodes:
+                routes.append(Route(nodes, self.problem.fitting_vehicles(nodes)[0]))
+        return routes
+
+    def _slot_routes(self, routes: Iterable[Route]) -> list[list[int]]:
+        """把业务路线放进对应车型的槽位，未用槽位保留为空。"""
+        slots: list[list[int]] = [[] for _ in self.slot_vehicles]
+        used = [0] * len(self.problem.vehicles)
+        for nodes, vehicle in routes:
+            slots[vehicle * self.slots_per_vehicle + used[vehicle]] = nodes
+            used[vehicle] += 1
+        return slots
+
+    # ---- 节点工具 ----
+
+    def _index(self, node: int) -> int:
+        return self.manager.NodeToIndex(node)
+
+    def _is_dn(self, node: int) -> bool:
+        return DEPOT < node < self.sink
+
+    def _vehicle_of(self, node: int) -> Any:
+        return self.routing.VehicleVar(self._index(node))
+
+    def _on_slot(self, node: int, slot: int) -> Any:
+        """布尔变量：node 是否由车辆槽位 slot 配送。"""
+        return self.solver.IsEqualCstVar(self._vehicle_of(node), slot)
+
+    def _register_arcs(self, arc: Callable[[int, int], int]) -> int:
+        """把按节点编号定义的弧成本预先算成矩阵，再注册为求解器回调。"""
+        nodes = range(self.sink + 1)
+        matrix = [[arc(i, j) for j in nodes] for i in nodes]
+        node_of = self.node_of
+        return self.routing.RegisterTransitCallback(
+            lambda a, b: matrix[node_of[a]][node_of[b]]
+        )
+
+    def _register_nodes(self, value: Callable[[int], int]) -> int:
+        values = [value(node) for node in self.node_of]
+        return self.routing.RegisterUnaryTransitCallback(lambda a: values[a])
+
+    def _distance(self, i: int, j: int) -> int:
+        return 0 if self.sink in (i, j) else self.problem.distance[i][j]
+
+    def _travel_and_unload(self, i: int, j: int) -> int:
+        """从 i 出发到 j 的时间：离开实际站点时计一次卸货，同站 DN 之间为零。"""
+        problem = self.problem
+        travel = 0 if self.sink in (i, j) else problem.duration[i][j]
+        if not self._is_dn(i):
+            return travel
+        same_site = self._is_dn(j) and problem.dn(i).siteCode == problem.dn(j).siteCode
+        return travel if same_site else travel + problem.unload_seconds
+
+    # ---- 约束 ----
+
+    def _add_cost_and_distance(self, weights: _ObjectiveWeights) -> None:
+        routing = self.routing
+        cost = self._register_arcs(
+            lambda i, j: self._distance(i, j) * weights.distance_weight
+        )
+        routing.SetArcCostEvaluatorOfAllVehicles(cost)
+        for slot, vehicle in enumerate(self.slot_vehicles):
+            routing.SetFixedCostOfVehicle(weights.per_vehicle + vehicle + 1, slot)
+        distance = self._register_arcs(self._distance)
+        routing.AddDimension(distance, 0, weights.max_distance, True, "Distance")
+
+    def _add_capacities(self) -> None:
+        """体积和重量各一个容量维度；每个槽位绑定其车型的两项容量。"""
+        problem = self.problem
+        for name, demand_field, capacity_field in (
+            ("Volume", "totalGrossVolume", "totalVolume"),
+            ("Weight", "totalGrossWeight", "totalWeight"),
+        ):
+
+            def demand(node: int, field: str = demand_field) -> int:
+                if not self._is_dn(node):
+                    return 0
+                return scaled(getattr(problem.dn(node), field), LOAD_SCALE)
+
+            capacities = [
+                scaled(getattr(problem.vehicles[vehicle], capacity_field), LOAD_SCALE)
+                for vehicle in self.slot_vehicles
+            ]
+            callback = self._register_nodes(demand)
+            self.routing.AddDimensionWithVehicleCapacity(
+                callback, 0, capacities, True, name
+            )
+
+    def _add_time(self) -> None:
+        """累计值表示开始卸货时间；松弛量允许提前到达后等待。"""
+        problem, routing = self.problem, self.routing
+        transit = self._register_arcs(self._travel_and_unload)
+        routing.AddDimension(transit, problem.horizon, problem.horizon, False, "Time")
+        time = routing.GetDimensionOrDie("Time")
+        for node in range(1, self.sink):
+            time.CumulVar(self._index(node)).SetRange(*problem.windows[node])
+        for slot in range(len(self.slot_vehicles)):
+            time.CumulVar(routing.Start(slot)).SetRange(0, problem.latest_departure)
+
+    def _add_shared_site_blocks(self) -> None:
+        """同车同站的 DN 必须连续停靠并共用 eta。
+
+        用序位维度约束：同车同站任意两单的序位差不超过本车该站 DN 数减一，
+        迫使它们组成连续块；同时令它们的开始卸货时间相等。
+        """
+        problem, routing, solver = self.problem, self.routing, self.solver
+        sites: defaultdict[str, list[int]] = defaultdict(list)
+        for node in range(1, self.sink):
+            sites[problem.dn(node).siteCode].append(node)
+        shared = [group for group in sites.values() if len(group) > 1]
+        if not shared:
+            return
+
+        n = len(problem.dns)
+        step = routing.RegisterTransitCallback(lambda a, b: 1)
+        routing.AddDimension(step, 0, n + 1, True, "Position")
+        position = routing.GetDimensionOrDie("Position")
+        time = routing.GetDimensionOrDie("Time")
+        slots = range(len(self.slot_vehicles))
+
+        def order(node: int) -> Any:
+            return position.CumulVar(self._index(node))
+
+        def start(node: int) -> Any:
+            return time.CumulVar(self._index(node))
+
+        for group in shared:
+            on_slot = [
+                solver.Sum([self._on_slot(i, s) for i in group]).Var() for s in slots
+            ]
+            for i in group:
+                same_site_count = solver.Element(on_slot, self._vehicle_of(i))
+                for j in group:
+                    if i == j:
+                        continue
+                    same = solver.IsEqualVar(self._vehicle_of(i), self._vehicle_of(j))
+                    solver.Add(
+                        order(i) - order(j) <= same_site_count - 1 + n * (1 - same)
+                    )
+                    solver.Add(start(i) - start(j) <= problem.horizon * (1 - same))
+
+    def _add_stop_limit(self) -> None:
+        """每车去重站点数不超过 maxSiteQty。
+
+        每组只有一个 DN 时用计数维度；否则按车辆是否访问该组计数。
+        """
+        problem, routing, solver = self.problem, self.routing, self.solver
+        request = problem.request
+        groups: defaultdict[GroupKey, list[int]] = defaultdict(list)
+        for node in range(1, self.sink):
+            key = group_key(problem.dn(node), request.lonAndLatCombination)
+            groups[key].append(node)
+        if not request.maxSiteQty or request.maxSiteQty >= len(groups):
+            return
+
+        if all(len(group) == 1 for group in groups.values()):
+            count = self._register_nodes(lambda node: int(self._is_dn(node)))
+            routing.AddDimension(count, 0, request.maxSiteQty, True, "StopCount")
+            return
+
+        for slot in range(len(self.slot_vehicles)):
+            visited = [
+                solver.Max([self._on_slot(i, slot) for i in group])
+                for group in groups.values()
+            ]
+            solver.Add(solver.Sum(visited) <= request.maxSiteQty)
+
+    def _add_distance_limits(self) -> None:
+        problem, routing = self.problem, self.routing
+        request = problem.request
+
         # 站间距离超限的有向边直接禁用；仓库到首站不受此限制。
-        if request.siteDistanceLimit > 0:
-            limit = request.siteDistanceLimit * DIST_SCALE
-            for i in range(1, n+1):
-                for j in range(1, n+1):
-                    if i != j and p.distance[i][j] > limit:
-                        routing.NextVar(manager.NodeToIndex(i)).RemoveValue(manager.NodeToIndex(j))
+        limit = request.siteDistanceLimit * DIST_SCALE
+        if limit > 0:
+            for i in range(1, self.sink):
+                for j in range(1, self.sink):
+                    if i != j and problem.distance[i][j] > limit:
+                        routing.NextVar(self._index(i)).RemoveValue(self._index(j))
+
         # 总距离含首段，因此“站间和 ≤ 首段”等价于“总距离 ≤ 两倍首段”。
         if request.distanceLessThanFirstLeg:
-            first_dist = [0 if manager.IndexToNode(i) in (0, sink) else p.distance[0][manager.IndexToNode(i)]
-                          for i in range(manager.GetNumberOfIndices())]
-            for v in range(m):
-                cp.Add(dist_dim.CumulVar(routing.End(v)) <= 2*cp.Element(first_dist, routing.NextVar(routing.Start(v))))
-        # 从可行初解启动引导局部搜索，每个耗时阶段结束后重算剩余预算。
-        params = pywrapcp.DefaultRoutingSearchParameters()
-        params.first_solution_strategy = routing_enums_pb2.FirstSolutionStrategy.PARALLEL_CHEAPEST_INSERTION
-        params.local_search_metaheuristic = routing_enums_pb2.LocalSearchMetaheuristic.GUIDED_LOCAL_SEARCH
-        params.use_full_propagation = True
-        remaining = time_limit_ms - (perf_counter()-started)*1000
-        solution = None
-        if remaining > 0:
-            params.time_limit.FromMilliseconds(max(1, int(remaining)))
-            routing.CloseModelWithParameters(params)
-            seed = routing.ReadAssignmentFromRoutes(seed_routes + [[] for _ in range(m-len(seed_routes))], True)
-            remaining = time_limit_ms - (perf_counter()-started)*1000
-            build_ms = (perf_counter()-build_started)*1000
-            if seed and remaining > 0:
-                params.time_limit.FromMilliseconds(max(1, int(remaining)))
-                search_started = perf_counter()
-                solution = routing.SolveFromAssignmentWithParameters(seed, params)
-                search_ms = (perf_counter()-search_started)*1000
-            solver_status = routing.status()
-        else:
-            build_ms = (perf_counter()-build_started)*1000
-        # 只在原生求解得到解时替换兜底路线，并为每条路线选最小可行车型。
-        if solution:
-            candidate = []
-            for v in range(m):
-                idx, nodes = routing.Start(v), []
-                while not routing.IsEnd(idx):
-                    node = manager.IndexToNode(idx)
-                    if node:
-                        nodes.append(node)
-                    idx = solution.Value(routing.NextVar(idx))
-                if nodes:
-                    candidate.append((nodes, p.types_for(nodes)[0]))
-            routes, source = candidate, "ortools"
-    # 输出前统一独立审计，不依赖求解器约束是否被正确编码。
-    validate_routes(p, routes)
-    # 使用同一当地时间基准恢复整秒时间戳，不做时区换算。
-    def timestamp(seconds):
-        return (request.earliestShippingDate + timedelta(seconds=seconds)).isoformat(sep=" ")
-    output = []
-    for nodes, kind in routes:
-        # 重新生成最早出仓的可行时间表；公开 eta 取开始卸货时间。
-        visits = p.schedule(nodes)
-        vehicle = p.vehicles[kind]
-        distance_value = sum(p.distance[a][b] for a, b in zip([0]+nodes, nodes))
-        output.append({
-            "dist": distance_value/DIST_SCALE,
-            "siteAddresses": [p.dns[i-1].orderReleaseId for i in nodes],
-            "departure_date": timestamp(0),
-            "siteDetails": [
-                {"siteAddress": p.dns[node-1].orderReleaseId,
-                 "eta": timestamp(visit[1])}
-                for node, visit in zip(nodes, visits)
-            ],
-            "vehicle": vehicle.vehicleTypeName,
-            "volume": float(sum(p.dns[i-1].totalGrossVolume for i in nodes)),
-            "weight": float(sum(p.dns[i-1].totalGrossWeight for i in nodes)),
-        })
-
-    # 有限时间搜索只能声明可行，不能据此声称全局最优。
-    return {**base_result, "status": "FEASIBLE" if n else "NO_ELIGIBLE_ORDERS", "solutionSource": source,
-            "routes": output, "vehicleCount": len(output), "servedOrderCount": n,
-            "totalDistance": sum(sum(p.distance[a][b] for a,b in zip([0]+nodes,nodes)) for nodes,_ in routes)/DIST_SCALE,
-            "objectivePolicy": "vehicles_distance_type" if fixed_mode(request) else "distance_type",
-            "optimalityProven": False, "solverStatus": solver_status,
-            "timingsMs": {"buildAndSeed": round(build_ms, 3), "search": round(search_ms, 3)},
-            "elapsedMs": round((perf_counter()-started)*1000, 3)}
+            distance = routing.GetDimensionOrDie("Distance")
+            first_leg = [
+                problem.distance[DEPOT][node] if self._is_dn(node) else 0
+                for node in self.node_of
+            ]
+            for slot in range(len(self.slot_vehicles)):
+                first = self.solver.Element(
+                    first_leg, routing.NextVar(routing.Start(slot))
+                )
+                self.solver.Add(distance.CumulVar(routing.End(slot)) <= 2 * first)
 
 
-# 这些报价模式以车辆数为第一目标，distance/null/空串以总距离为第一目标。
-def fixed_mode(request):
-    return request.quotationModel in ("city", "zipCode", "province")
+def _search_parameters(time_limit_ms: float) -> Any:
+    params = pywrapcp.DefaultRoutingSearchParameters()
+    strategy = routing_enums_pb2.FirstSolutionStrategy
+    metaheuristic = routing_enums_pb2.LocalSearchMetaheuristic
+    params.first_solution_strategy = strategy.PARALLEL_CHEAPEST_INSERTION
+    params.local_search_metaheuristic = metaheuristic.GUIDED_LOCAL_SEARCH
+    params.use_full_propagation = True
+    params.time_limit.FromMilliseconds(max(1, int(time_limit_ms)))
+    return params
