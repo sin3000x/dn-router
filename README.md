@@ -127,7 +127,9 @@ data = report_data(payload, result)  # 页面所用的 JSON 数据
 有效订单超出所有车型容量：`INFEASIBLE_INPUT`，整批不交付部分路线。
 不使用 `AddDisjunction`，不会通过罚分允许漏单。
 返回 `NO_ELIGIBLE_ORDERS` 表示原请求为空或全为允许剔除的异常，不表示完成了这些异常 DN。
-CLI 对 INVALID_INPUT / INFEASIBLE_INPUT 返回退出码 2，其他业务结果返回 0。
+输出前对所有路线做独立审计；审计失败说明求解流程有缺陷，返回 `SOLVER_ERROR`
+（错误码 `ROUTE_AUDIT_FAILED`），不交付路线，也不报告为输入错误。
+CLI 对 INVALID_INPUT / INFEASIBLE_INPUT 返回退出码 2，对 SOLVER_ERROR 返回 1，其他业务结果返回 0。
 
 ## 实现
 

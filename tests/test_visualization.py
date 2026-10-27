@@ -10,9 +10,9 @@ from dn_router import render_html
 
 # 提取内嵌 JSON，检查展示数据而不依赖页面文字匹配。
 def report_data(html):
-    return json.loads(
-        re.search(r'id="report-data">(.*?)</script>', html, re.DOTALL).group(1)
-    )
+    match = re.search(r'id="report-data">(.*?)</script>', html, re.DOTALL)
+    assert match
+    return json.loads(match.group(1))
 
 
 # 恶意字段不能闭合脚本或注入标签，解码后仍应保留原始业务文本。

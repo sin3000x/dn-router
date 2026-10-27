@@ -5,6 +5,7 @@
 """
 
 import argparse
+import os
 import socket
 import sys
 from http import HTTPStatus
@@ -26,12 +27,16 @@ _MAX_TIME_LIMIT_MS = 120_000
 def list_json_files(root: Path) -> list[dict[str, Any]]:
     """列出根目录下的 JSON 文件，最近修改的排在前面，跳过隐藏目录。"""
     found = []
-    for path in root.rglob("*.json"):
-        relative = path.relative_to(root)
-        if any(p.startswith(".") or p in _SKIPPED_DIRS for p in relative.parts[:-1]):
-            continue
-        if path.is_file():
-            found.append((path.stat().st_mtime, relative.as_posix()))
+    for directory, subdirs, names in os.walk(root):
+        # 原地剪枝，不进入 .venv 等目录，避免遍历后再过滤。
+        subdirs[:] = [
+            d for d in subdirs if not d.startswith(".") and d not in _SKIPPED_DIRS
+        ]
+        for name in names:
+            path = Path(directory, name)
+            if path.suffix == ".json" and path.is_file():
+                relative = path.relative_to(root).as_posix()
+                found.append((path.stat().st_mtime, relative))
     found.sort(key=lambda item: (-item[0], item[1]))
     return [{"path": name, "mtime": mtime} for mtime, name in found[:_MAX_FILES]]
 
@@ -100,7 +105,12 @@ class _Handler(BaseHTTPRequestHandler):
         except ValueError:
             limit = self.default_time_limit_ms
         limit = min(max(limit, 1), _MAX_TIME_LIMIT_MS)
-        payload, result = solve_text(raw, limit)
+        try:
+            payload, result = solve_text(raw, limit)
+        except Exception as error:  # noqa: BLE001 - HTTP 边界兜底
+            # 求解内部异常也要给页面返回可读错误，而不是直接断开连接。
+            self._json(HTTPStatus.INTERNAL_SERVER_ERROR, {"error": repr(error)})
+            return
         try:
             data = report_data(payload if isinstance(payload, dict) else {}, result)
         except (KeyError, TypeError, ValueError) as error:
@@ -172,8 +182,8 @@ def main(argv: list[str] | None = None) -> int:
             1,
             f"无法监听 {args.host}:{args.port}（{error.strerror}），可用 --port 换一个端口\n",
         )
-    host, port = server.server_address[:2]
-    print(f"dn-router 可视化服务（目录 {server.RequestHandlerClass.root}）", flush=True)
+    host, port = args.host, server.server_port
+    print(f"dn-router 可视化服务（目录 {Path(args.dir).resolve()}）", flush=True)
     for address in _display_hosts(host):
         print(f"  http://{address}:{port}/", flush=True)
     if host in ("127.0.0.1", "localhost"):

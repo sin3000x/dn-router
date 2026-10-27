@@ -12,13 +12,20 @@ from .visualization import write_html
 FAILURE_STATUSES = frozenset({"INVALID_INPUT", "INFEASIBLE_INPUT"})
 
 
+def _positive_int(text: str) -> int:
+    value = int(text)
+    if value < 1:
+        raise argparse.ArgumentTypeError("must be a positive integer")
+    return value
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Open-route mandatory-DN planner",
         epilog="Run `dn-router serve --help` for the web visualization service.",
     )
     parser.add_argument("input", help="JSON input path, or - for stdin")
-    parser.add_argument("--time-limit-ms", type=int, default=200)
+    parser.add_argument("--time-limit-ms", type=_positive_int, default=200)
     parser.add_argument("--output", "-o")
     parser.add_argument(
         "--report",
@@ -36,21 +43,21 @@ def solve_text(raw: str, time_limit_ms: int) -> tuple[Any, dict[str, Any]]:
 
     读取失败时也保留空请求，供错误状态的报告使用。
     """
-    payload: Any = {}
     try:
         # JSON 小数直接解析为 Decimal，避免先转浮点造成精度损失。
         payload = json.loads(raw, parse_float=Decimal)
-        result = solve(payload, time_limit_ms=time_limit_ms)
     except ValueError as error:
         result = {
             "status": "INVALID_INPUT",
             "errors": [{"message": str(error)}],
             "routes": [],
         }
-    return payload, result
+        return {}, result
+    # 只捕获解析错误；求解内部异常不能伪装成输入无效。
+    return payload, solve(payload, time_limit_ms=time_limit_ms)
 
 
-# 返回码 2 表示输入无效或整批不可行；其他业务状态返回 0。
+# 返回码 2 表示输入无效或整批不可行，1 表示求解结果未通过审计；其他业务状态返回 0。
 def main(argv: list[str] | None = None) -> int:
     argv = sys.argv[1:] if argv is None else argv
     if argv[:1] == ["serve"]:
@@ -102,6 +109,8 @@ def main(argv: list[str] | None = None) -> int:
     # 即使输入不可行也生成状态报告；非对象输入不传入可视化字段解析。
     if args.html:
         write_html(payload if isinstance(payload, dict) else {}, result, args.html)
+    if result["status"] == "SOLVER_ERROR":
+        return 1
     return 2 if result["status"] in FAILURE_STATUSES else 0
 
 

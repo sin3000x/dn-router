@@ -7,7 +7,7 @@ import pytest
 
 from dn_router import solve
 from dn_router.models import Request, group_key
-from dn_router.problem import InputError, prepare, validate_routes
+from dn_router.problem import InputError, Route, prepare, validate_routes
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -234,7 +234,19 @@ def test_distance_precedes_vehicle_count():
 def test_independent_validator_detects_omission():
     p = prepare(Request.model_validate(case(2)))
     with pytest.raises(InputError, match="omitted"):
-        validate_routes(p, [([1], 0)])
+        validate_routes(p, [Route([1], 0)])
+
+
+# 求解流程产出无效路线时报告求解错误，不能伪装成输入无效或交付路线。
+def test_audit_failure_is_solver_error(monkeypatch):
+    from dn_router import solver
+
+    monkeypatch.setattr(
+        solver, "build_initial_routes", lambda problem, end: [Route([1], 0)]
+    )
+    r = solve(case(2))
+    assert r["status"] == "SOLVER_ERROR" and r["routes"] == []
+    assert r["errors"][0]["code"] == "ROUTE_AUDIT_FAILED"
 
 
 # 极短预算下仍需通过可行兜底覆盖全部订单。

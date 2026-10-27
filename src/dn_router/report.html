@@ -179,7 +179,7 @@ function render(d){
   $('welcome').hidden=true;$('report').hidden=false;
   const status=result.status||'UNKNOWN';
   $('status').hidden=false;$('status').textContent=status;
-  $('status').className='pill '+(status==='FEASIBLE'?'ok':/INVALID|INFEASIBLE/.test(status)?'bad':'warn');
+  $('status').className='pill '+(status==='FEASIBLE'?'ok':/INVALID|INFEASIBLE|ERROR/.test(status)?'bad':'warn');
   $('task').textContent=result.taskNo||'';$('task').title=result.taskNo||'';
   document.title=(result.taskNo?result.taskNo+' · ':'')+'DN Router';
   metrics();routeList();notices();footer();

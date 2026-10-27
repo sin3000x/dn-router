@@ -108,16 +108,21 @@ def solve(payload: dict[str, Any], *, time_limit_ms: int = 200) -> Result:
             return finish(**base, status="INVALID_INPUT", routes=[], errors=errors)
 
         build_started = perf_counter()
-        # 距离优先时每车型最多 N 辆；车辆数优先时以初解车数为上界。
-        slots_per_vehicle = len(routes) if request.count_first else len(nodes)
-        model = _RoutingModel(problem, weights, slots_per_vehicle)
+        # 每车型槽位数取初解路线数：总槽位仍是初解车数的 K 倍，足够局部搜索拆分路线；
+        # 距离优先若按 N 预留，100 单 6 车型的建模就会耗掉约 0.8 秒预算。
+        model = _RoutingModel(problem, weights, len(routes))
         solution, solver_status, search_ms = model.search(routes, deadline)
         build_ms = (perf_counter() - build_started) * 1000 - search_ms
         if solution:
             routes, source = model.routes(solution), "ortools"
 
     # 输出前统一独立审计，不依赖求解器约束是否被正确编码。
-    validate_routes(problem, routes)
+    # 输入已通过校验，审计失败说明求解流程有缺陷，不能报告为输入错误。
+    try:
+        validate_routes(problem, routes)
+    except InputError as error:
+        errors = [{"code": "ROUTE_AUDIT_FAILED", "message": str(error)}]
+        return finish(**base, status="SOLVER_ERROR", routes=[], errors=errors)
     output = [_route_output(problem, route) for route in routes]
     total_distance = sum(problem.length(r.nodes) for r in routes) / DIST_SCALE
     policy = "vehicles_distance_type" if request.count_first else "distance_type"
