@@ -156,6 +156,20 @@ def test_first_leg_constraint():
     assert run(p)["vehicleCount"] == 1
 
 
+# 首段预算跨多段站间距离累计扣减：恰好用完允许，超出一点即须拆车。
+# 要求解来自 OR-Tools，确认预算维度既不误放行也不误拒绝初解。
+@pytest.mark.parametrize(("first_leg", "vehicles"), [(2, 1), (1, 2)])
+def test_first_leg_budget_spans_multiple_legs(first_leg, vehicles):
+    p = case(3)
+    for leg in p["allPathDistanceVoList"]:
+        is_depot = leg["from"] == p["sourceLocation"]
+        leg["planDistance"] = first_leg if is_depot else 1
+    p["distanceLessThanFirstLeg"] = True
+    r = run(p)
+    assert r["vehicleCount"] == vehicles
+    assert r["solutionSource"] == "ortools"
+
+
 # 仅空窗及最早出仓直送仍超时的 DN 可被逐单剔除。
 def test_time_exclusions_only():
     p = case(3)

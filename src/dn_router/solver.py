@@ -217,7 +217,7 @@ class _RoutingModel:
         index_count = self.manager.GetNumberOfIndices()
         self.node_of = [self.manager.IndexToNode(i) for i in range(index_count)]
 
-        self._add_cost_and_distance(weights)
+        self._add_cost(weights)
         self._add_capacities()
         self._add_time()
         self._add_shared_site_blocks()
@@ -314,7 +314,7 @@ class _RoutingModel:
 
     # ---- 约束 ----
 
-    def _add_cost_and_distance(self, weights: _ObjectiveWeights) -> None:
+    def _add_cost(self, weights: _ObjectiveWeights) -> None:
         routing = self.routing
         cost = self._register_arcs(
             lambda i, j: self._distance(i, j) * weights.distance_weight
@@ -322,8 +322,6 @@ class _RoutingModel:
         routing.SetArcCostEvaluatorOfAllVehicles(cost)
         for slot, vehicle in enumerate(self.slot_vehicles):
             routing.SetFixedCostOfVehicle(weights.per_vehicle + vehicle + 1, slot)
-        distance = self._register_arcs(self._distance)
-        routing.AddDimension(distance, 0, weights.max_distance, True, "Distance")
 
     def _add_capacities(self) -> None:
         """体积和重量各一个容量维度；每个槽位绑定其车型的两项容量。"""
@@ -443,18 +441,22 @@ class _RoutingModel:
                 if banned:
                     routing.NextVar(index[i]).RemoveValues(banned)
 
-        # 总距离含首段，因此“站间和 ≤ 首段”等价于“总距离 ≤ 两倍首段”。
+        # “站间和 ≤ 首段”写成预算维度：首段存入预算，每段站间距离扣减，余额不得为负。
+        # 维度约束能被局部搜索过滤器看到；改用 solver.Add 时，路线插入类算子
+        # 看不到该约束，产生的候选几乎都在最终 CP 检查中被否决，无法减车。
         if request.distanceLessThanFirstLeg:
-            distance = routing.GetDimensionOrDie("Distance")
-            first_leg = [
-                problem.distance[DEPOT][node] if self._is_dn(node) else 0
-                for node in self.node_of
-            ]
-            for slot in range(len(self.slot_vehicles)):
-                first = self.solver.Element(
-                    first_leg, routing.NextVar(routing.Start(slot))
-                )
-                self.solver.Add(distance.CumulVar(routing.End(slot)) <= 2 * first)
+
+            def budget(i: int, j: int) -> int:
+                if not self._is_dn(j):
+                    return 0
+                if i == DEPOT:
+                    return problem.distance[DEPOT][j]
+                return -self._distance(i, j)
+
+            longest_first_leg = max(problem.distance[DEPOT])
+            routing.AddDimension(
+                self._register_arcs(budget), 0, longest_first_leg, True, "FirstLeg"
+            )
 
 
 def _search_parameters(time_limit_ms: float) -> Any:
