@@ -6,7 +6,7 @@
 - 时间均为相对最早出仓时刻的整数秒。
 """
 
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Iterator, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import ROUND_CEILING, Decimal
@@ -106,6 +106,20 @@ class Problem:
             visits += [Visit(arrival, start, finish)] * len(stop)
             time, previous = finish, stop[-1]
         return visits
+
+    def insertions(self, nodes: Sequence[int], node: int) -> Iterator[list[int]]:
+        """node 插入 nodes 各位置后，满足顺序类约束的候选路线。"""
+        for position in range(len(nodes) + 1):
+            candidate = [*nodes[:position], node, *nodes[position:]]
+            try:
+                self.check_sequence(candidate)
+            except InputError:
+                continue
+            yield candidate
+
+    def admits(self, nodes: Sequence[int]) -> bool:
+        """容量与站点数可行；二者与访问顺序无关。"""
+        return bool(self.fitting_vehicles(nodes)) and self.within_stop_limit(nodes)
 
     def distinct_stops(self, nodes: Iterable[int]) -> int:
         """按请求的站点计数口径去重后的站点数。"""

@@ -18,6 +18,7 @@ Python 调用：
 
 ```python
 from dn_router import solve
+
 result = solve(payload, time_limit_ms=1000)
 ```
 
@@ -70,6 +71,7 @@ Python 调用（保留原始输入以关联坐标与车型容量）：
 
 ```python
 from dn_router import report_data, solve, write_html
+
 result = solve(payload, time_limit_ms=1000)
 write_html(payload, result, "result.html")
 data = report_data(payload, result)  # 页面所用的 JSON 数据
@@ -130,7 +132,8 @@ CLI 对 INVALID_INPUT / INFEASIBLE_INPUT 返回退出码 2，其他业务结果�
 ## 实现
 
 1. Pydantic 校验、Decimal 精确缩放、时间窗预检查。
-2. 单单直送保证完整可行兜底；短预算的可行插入构造较好初解。
+2. 单单直送保证完整可行兜底；短预算的可行插入构造较好初解；车辆数优先且车数高于下界时，
+   再做路线消除（拆掉整条路线重插，`reduce.py`）。内置局部搜索清不空一条路线，这一步补上。
 3. OR-Tools Routing 搜索：虚拟终点、容量维度、时间维度、去重计数、禁用边、首段关联距离约束。
 4. 使用原生固定车型车辆容量模型。距离优先时每车型最多 N 个槽位；
    车辆数优先时每车型最多初解车辆数个槽位，足够表示所有不比初解更多车的方案。
@@ -159,6 +162,7 @@ CLI 对 INVALID_INPUT / INFEASIBLE_INPUT 返回退出码 2，其他业务结果�
 - `src/dn_router/models.py`：输入类型与结构校验。
 - `problem.py`：矩阵、单位、预检查、独立路线审计。
 - `initial.py`：有界可行初解构造。
+- `reduce.py`：车辆数优先时的路线消除阶段；阶段列表见 `solver._seed_stages`，新增阶段只需在此挂接。
 - `solver.py`：OR-Tools 模型与输出。
 - `visualization.py` + `report.html`：离线 HTML 报告的数据组装与页面模板。
 - `cli.py`：命令行。

@@ -3,7 +3,7 @@
 import math
 from time import perf_counter
 
-from .problem import DEPOT, InputError, Problem, Route
+from .problem import DEPOT, Problem, Route
 
 # 增量成本元组，按目标优先级逐位比较；全零表示与另开一辆直送车持平。
 Delta = tuple[int, int, int]
@@ -57,12 +57,7 @@ def _best_insertion(
         if not vehicles or not problem.within_stop_limit(merged):
             continue
         base = problem.length(route.nodes) + problem.length(direct.nodes)
-        for position in range(len(route.nodes) + 1):
-            nodes = route.nodes[:position] + [node] + route.nodes[position:]
-            try:
-                problem.check_sequence(nodes)
-            except InputError:
-                continue
+        for nodes in problem.insertions(route.nodes, node):
             merged_route = Route(nodes, vehicles[0])
             delta = _delta(problem, merged_route, route, direct, base)
             if delta < best_delta:

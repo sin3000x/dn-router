@@ -1,14 +1,16 @@
 """用 OR-Tools 固定车型容量模型求解开放路线，保留完整可行兜底方案。
 
-求解流程：校验输入 → 逐单直送兜底 → 插入法初解 → OR-Tools 局部搜索 → 独立审计。
+求解流程：校验输入 → 逐单直送兜底 → 插入法初解 → 路线消除（仅车辆数优先）
+→ OR-Tools 局部搜索 → 独立审计。
 任一阶段预算不足时都会保留上一阶段的可行方案。
 """
 
 from collections import defaultdict
 from collections.abc import Callable, Iterable
 from datetime import timedelta
+from math import inf
 from time import perf_counter
-from typing import Any
+from typing import Any, NamedTuple
 
 from ortools.constraint_solver import pywrapcp, routing_enums_pb2
 from pydantic import ValidationError
@@ -27,12 +29,27 @@ from .problem import (
     scaled,
     validate_routes,
 )
+from .reduce import reduce_routes
 
 Result = dict[str, Any]
 
-# 插入法初解最多占用总预算的五分之一，且不超过 40ms。
-INITIAL_BUDGET_SHARE = 0.2
-INITIAL_BUDGET_CAP = 0.04
+
+class Stage(NamedTuple):
+    """初解阶段：在总预算的 share 比例（不超过 cap 秒）内改进路线。"""
+
+    run: Callable[[Problem, list[Route], float], list[Route]]
+    share: float
+    cap: float = inf
+
+
+def _seed_stages(request: Request) -> list[Stage]:
+    """按顺序执行的初解阶段；新增阶段只需在此挂接。"""
+    stages = [
+        Stage(lambda problem, _, end: build_initial_routes(problem, end), 0.2, 0.04)
+    ]
+    if request.count_first:
+        stages.append(Stage(reduce_routes, 0.25))
+    return stages
 
 
 def solve(payload: dict[str, Any], *, time_limit_ms: int = 200) -> Result:
@@ -78,10 +95,9 @@ def solve(payload: dict[str, Any], *, time_limit_ms: int = 200) -> Result:
     source, solver_status, build_ms, search_ms = "direct_fallback", None, 0.0, 0.0
 
     if nodes and perf_counter() < deadline:
-        initial_budget = min(INITIAL_BUDGET_CAP, budget * INITIAL_BUDGET_SHARE)
-        routes = build_initial_routes(
-            problem, min(deadline, perf_counter() + initial_budget)
-        )
+        for stage in _seed_stages(request):
+            end = perf_counter() + min(stage.cap, budget * stage.share)
+            routes = stage.run(problem, routes, min(deadline, end))
         source = "insertion_fallback"
 
     if nodes:
