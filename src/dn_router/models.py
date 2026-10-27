@@ -18,8 +18,8 @@ COUNT_FIRST_QUOTATIONS = frozenset({"city", "zipCode", "province"})
 _MICRO = Decimal("0.000001")
 
 
-# 采用业务当地时间，拒绝时区和小数秒，避免计算口径不一致。
 def _is_local_whole_second(value: datetime) -> bool:
+    """采用业务当地时间，拒绝时区和小数秒，避免计算口径不一致。"""
     return value.tzinfo is None and not value.microsecond
 
 
@@ -118,8 +118,17 @@ class Request(BaseModel):
         return self
 
 
-# 生成站点计数键，与按 siteCode 合并实际卸货停靠的规则独立。
 def group_key(dn: DN, mode: int | None) -> GroupKey:
+    """生成站点计数键，与按 siteCode 合并实际卸货停靠的规则独立。
+
+    Args:
+        dn: 配送单。
+        mode: 请求的 lonAndLatCombination。
+
+    Returns:
+        mode 为 0 时返回 ("site", siteCode)；为 1 时返回 ("geo", 纬度, 经度)，
+        坐标四舍五入到六位小数；其余返回 ("dn", orderReleaseId)。
+    """
     if mode == 0:
         return ("site", dn.siteCode)
     if mode == 1:

@@ -179,7 +179,20 @@ def _finite(value: Any) -> Any:
 
 
 def report_data(payload: Json, result: Json) -> Json:
-    """组装页面所需的路线、坐标、车型与时间轴数据，结果可直接严格 JSON 序列化。"""
+    """组装页面所需的路线、坐标、车型与时间轴数据，结果可直接严格 JSON 序列化。
+
+    Args:
+        payload: 原始请求 JSON 对象；输入无效时可以是空字典或残缺对象。
+        result: solve() 返回的结果对象。
+
+    Returns:
+        包含 result（路线已改为按实际停靠展示）、depot、vehicles、timeline 的字典。
+
+    Raises:
+        ValueError: 结果含路线但请求无法重新校验，或路线时间与权威矩阵不一致。
+        KeyError: 路线引用了请求中不存在或已剔除的 DN。
+        TypeError: result 的结构与 solve() 输出不符。
+    """
 
     # 错误输入也要能展示状态，只提取结构合法的字典记录。
     def records(key: str) -> list[Json]:
@@ -252,10 +265,31 @@ def render_page(data: Json | None) -> str:
 
 
 def render_html(payload: Json, result: Json) -> str:
-    """直接嵌入数据与前端资源，生成无需联网的报告。"""
+    """直接嵌入数据与前端资源，生成无需联网的报告。
+
+    Args:
+        payload: 原始请求 JSON 对象，同 report_data()。
+        result: solve() 返回的结果对象。
+
+    Returns:
+        完整 HTML 文本。
+
+    Raises:
+        与 report_data() 相同。
+    """
     return render_page(report_data(payload, result))
 
 
 def write_html(payload: Json, result: Json, path: str | Path) -> None:
-    """以 UTF-8 保存完整离线报告，页面无需额外资源文件。"""
+    """以 UTF-8 保存完整离线报告，页面无需额外资源文件。
+
+    Args:
+        payload: 原始请求 JSON 对象，同 report_data()。
+        result: solve() 返回的结果对象。
+        path: 输出文件路径，已存在时覆盖。
+
+    Raises:
+        OSError: 写文件失败。
+        其余同 report_data()。
+    """
     Path(path).write_text(render_html(payload, result), encoding="utf-8")

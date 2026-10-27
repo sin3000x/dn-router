@@ -11,7 +11,15 @@ NO_GAIN: Delta = (0, 0, 0)
 
 
 def build_initial_routes(problem: Problem, deadline: float) -> list[Route]:
-    """按扫描序逐单尝试插入已有路线；预算耗尽后仍逐单直送，保证不漏单。"""
+    """按扫描序逐单尝试插入已有路线；预算耗尽后仍逐单直送，保证不漏单。
+
+    Args:
+        problem: 归一化后的问题。
+        deadline: 截止时刻，perf_counter() 的绝对值（秒），不是剩余时长。
+
+    Returns:
+        恰好覆盖全部 DN 的可行路线。
+    """
     routes: list[Route] = []
     for node in _sweep_order(problem):
         direct = Route([node], problem.fitting_vehicles([node])[0])

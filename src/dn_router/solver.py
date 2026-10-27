@@ -35,7 +35,14 @@ Result = dict[str, Any]
 
 
 class Stage(NamedTuple):
-    """初解阶段：在总预算的 share 比例（不超过 cap 秒）内改进路线。"""
+    """初解阶段：在总预算的 share 比例（不超过 cap 秒）内改进路线。
+
+    Attributes:
+        run: 阶段函数 (problem, 当前可行路线, deadline) -> 新的可行路线；
+            deadline 是 perf_counter() 的绝对时刻（秒）。
+        share: 本阶段可用的总预算比例。
+        cap: 本阶段可用时长上限，单位秒。
+    """
 
     run: Callable[[Problem, list[Route], float], list[Route]]
     share: float
@@ -53,7 +60,24 @@ def _seed_stages(request: Request) -> list[Stage]:
 
 
 def solve(payload: dict[str, Any], *, time_limit_ms: int = 200) -> Result:
-    """预算覆盖整体计算，尽力遵守；原生建模调用不能保证在任意时点中断。"""
+    """求解一批配送请求，返回公开结果对象。
+
+    预算覆盖整体计算，尽力遵守；原生建模调用不能保证在任意时点中断。
+
+    Args:
+        payload: 原始请求 JSON 值，字段见 schemas/request.schema.json。
+        time_limit_ms: 总时间预算，单位毫秒，须为正整数。
+
+    Returns:
+        结果字典，始终包含 status、routes 和 elapsedMs。status 为 FEASIBLE 或
+        NO_ELIGIBLE_ORDERS 时附带路线统计、solverStatus 等字段；为 INVALID_INPUT、
+        INFEASIBLE_INPUT 或 SOLVER_ERROR 时 routes 为空并附带 errors。
+        完整字段见 docs/api.md。
+
+    Raises:
+        ValueError: time_limit_ms 不是正整数。请求本身不合法时不抛错，
+            而是返回 status 为 INVALID_INPUT 的结果。
+    """
     started = perf_counter()
     is_int = isinstance(time_limit_ms, int) and not isinstance(time_limit_ms, bool)
     if not is_int or time_limit_ms < 1:
@@ -231,7 +255,13 @@ class _RoutingModel:
     ) -> tuple[Any, int | None, float]:
         """从可行初解启动引导局部搜索，每个耗时阶段结束后重算剩余预算。
 
-        返回 (解或 None, 求解器状态, 搜索耗时 ms)。
+        Args:
+            initial: 可行初解，每条路线的车型下标决定放入哪一块槽位。
+            deadline: 截止时刻，perf_counter() 的绝对值（秒），不是剩余时长。
+
+        Returns:
+            (解或 None, 求解器状态或 None, 搜索耗时 ms)。预算不足或初解无法
+            载入时解为 None。
         """
         if _remaining_ms(deadline) <= 0:
             return None, None, 0.0

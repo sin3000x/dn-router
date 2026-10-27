@@ -142,7 +142,20 @@ def make_server(
     port: int = 8787,
     time_limit_ms: int = 1000,
 ) -> ThreadingHTTPServer:
-    """创建绑定好目录与默认时限的服务实例；port=0 时由系统分配端口。"""
+    """创建绑定好目录与默认时限的服务实例。
+
+    Args:
+        root: 请求 JSON 所在目录，服务只读取其中的 .json 文件。
+        host: 监听地址；默认监听所有网卡。
+        port: 监听端口；为 0 时由系统分配。
+        time_limit_ms: 页面未指定时的默认求解时限，单位毫秒。
+
+    Returns:
+        已绑定但尚未启动的服务实例，调用 serve_forever() 开始服务。
+
+    Raises:
+        OSError: 无法绑定地址或端口。
+    """
     handler = type(
         "Handler",
         (_Handler,),

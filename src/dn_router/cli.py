@@ -41,7 +41,13 @@ def _parser() -> argparse.ArgumentParser:
 def solve_text(raw: str, time_limit_ms: int) -> tuple[Any, dict[str, Any]]:
     """解析 JSON 文本并求解；解析失败时返回 INVALID_INPUT 结果而不是抛错。
 
-    读取失败时也保留空请求，供错误状态的报告使用。
+    Args:
+        raw: 请求 JSON 文本。
+        time_limit_ms: 求解时间预算，单位毫秒。
+
+    Returns:
+        (payload, result)。payload 是解析出的 JSON 值，不一定是对象；解析失败时
+        为空字典，供错误状态的报告使用。result 是 solve() 的结果。
     """
     try:
         # JSON 小数直接解析为 Decimal，避免先转浮点造成精度损失。
@@ -57,8 +63,17 @@ def solve_text(raw: str, time_limit_ms: int) -> tuple[Any, dict[str, Any]]:
     return payload, solve(payload, time_limit_ms=time_limit_ms)
 
 
-# 返回码 2 表示输入无效或整批不可行，1 表示求解结果未通过审计；其他业务状态返回 0。
 def main(argv: list[str] | None = None) -> int:
+    """命令行入口；首个参数为 serve 时转交在线可视化服务。
+
+    Args:
+        argv: 命令行参数，不含程序名；为 None 时读取 sys.argv。
+
+    Returns:
+        退出码：2 表示输入无效或整批不可行，1 表示求解结果未通过审计，
+        其他业务状态为 0；serve 子命令返回其自身的退出码。参数错误时由
+        argparse 直接以退出码 2 退出。
+    """
     argv = sys.argv[1:] if argv is None else argv
     if argv[:1] == ["serve"]:
         from .server import main as serve_main

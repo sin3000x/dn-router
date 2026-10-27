@@ -23,7 +23,17 @@ Plans = list[list[int]]
 def reduce_routes(
     problem: Problem, routes: list[Route], deadline: float
 ) -> list[Route]:
-    """在预算内尽量减少路线数；无法改善时原样返回。"""
+    """在预算内尽量减少路线数；无法改善时原样返回。
+
+    Args:
+        problem: 归一化后的问题。
+        routes: 当前可行方案。
+        deadline: 截止时刻，perf_counter() 的绝对值（秒），不是剩余时长。
+
+    Returns:
+        路线数不多于输入的可行方案，每条路线使用最小可装车型；
+        路线数未减少时返回传入的 routes。
+    """
     bound = vehicle_lower_bound(problem)
     rng = random.Random(0)  # 固定种子，结果可复现
     plans = best = [list(route.nodes) for route in routes]

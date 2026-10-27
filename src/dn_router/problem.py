@@ -32,12 +32,19 @@ class InputError(ValueError):
 
 
 class Route(NamedTuple):
+    """一条开放路线。
+
+    Attributes:
+        nodes: 按访问顺序排列的 DN 节点编号（1..N），不含仓库。
+        vehicle: 车型在 Problem.vehicles 中的下标。
+    """
+
     nodes: list[int]
     vehicle: int
 
 
 class Visit(NamedTuple):
-    """一次停靠的时间点；公开 eta 取 start（开始卸货）。"""
+    """一次停靠的时间点，均为相对最早出仓的秒；公开 eta 取 start（开始卸货）。"""
 
     arrival: int
     start: int
@@ -55,6 +62,24 @@ def scaled(value: Decimal | int, scale: int) -> int:
 
 @dataclass
 class Problem:
+    """归一化后的求解输入，矩阵和时间窗都按节点编号索引。
+
+    Attributes:
+        request: 原始请求。
+        dns: 保留的 DN，dns[i - 1] 对应节点 i。
+        vehicles: 车型，按 (容积, 载重, 名称) 从小到大排序，下标即车型等级。
+        distance: 距离矩阵 [from][to]，单位为输入距离 × DIST_SCALE 的整数；
+            返仓边和同站 DN 之间为 0。
+        duration: 行驶耗时矩阵 [from][to]，整数秒；返仓边和同站 DN 之间为 0。
+        windows: 节点 0..N 的开始卸货区间 (最早, 最晚)，相对最早出仓的秒；
+            仓库及无时间窗的 DN 为 (0, horizon)。
+        horizon: 时间上界（秒），覆盖全部可能的行驶、等待与卸货。
+        latest_departure: 最晚出仓时刻（秒）；请求未给出时等于 horizon。
+        unload_seconds: 每次实际停靠的卸货时长，整数秒（向上取整）。
+        rejected: 预处理剔除的订单，元素为 {"orderReleaseId": ..., "code": ...}。
+        warnings: 归一化过程中产生的提示文本。
+    """
+
     request: Request
     dns: list[DN]
     vehicles: list[Vehicle]
@@ -90,6 +115,12 @@ class Problem:
 
         同车同站的 DN 必须连续访问，组成一次停靠：共用到达和开始卸货时间，
         整组只计一次卸货时长；离站后不能再次访问该站。
+
+        Returns:
+            与 nodes 一一对应的 Visit 列表。
+
+        Raises:
+            InputError: 同车离站后再次访问该站，或无法满足时间窗。
         """
         time, previous, visits, seen = 0, DEPOT, [], set()
         for site, group in groupby(nodes, key=lambda i: self.dn(i).siteCode):
@@ -137,7 +168,13 @@ class Problem:
         self.check_sequence(nodes)
 
     def check_sequence(self, nodes: Sequence[int]) -> None:
-        """检查与访问顺序相关的约束：站间距离、首段关联距离和时间窗。"""
+        """检查与访问顺序相关的约束：站间距离、首段关联距离和时间窗。
+
+        nodes 不能为空。
+
+        Raises:
+            InputError: 任一约束不满足。
+        """
         request = self.request
         between = [self.distance[a][b] for a, b in pairwise(nodes)]
         limit = request.siteDistanceLimit * DIST_SCALE
