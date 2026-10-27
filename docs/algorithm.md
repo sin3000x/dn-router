@@ -1,359 +1,145 @@
 # 算法设计
 
-业务约束见[业务规则](business-rules.md)。本文说明求解流程、各阶段的模型，以及为什么这样设计。
+业务约束见[业务规则](business-rules.md)。本文说明求解分几步、每步做什么、为什么这样做。
 
-## 符号
+## 总体思路
 
-| 符号 | 含义 |
-|---|---|
-| $0$ | 仓库节点 |
-| $V = \{1, \dots, N\}$ | 保留下来的 DN 节点 |
-| $K$ | 车型数；车型按（容积, 载重, 名称）升序编号为 $k = 0, \dots, K-1$ ，编号即车型等级 |
-| $Q^{vol}_k,\ Q^{wt}_k$ | 车型 $k$ 的容积、载重 |
-| $q^{vol}_i,\ q^{wt}_i$ | DN $i$ 的体积、重量 |
-| $d_{ij},\ t_{ij}$ | 有向距离（×1000 后的整数）、行驶耗时（秒） |
-| $[a_i, b_i]$ | DN $i$ 的开始卸货时间窗（相对最早出仓的秒数） |
-| $u$ | 每次停靠的卸货时长（秒） |
-| $\sigma(i)$ | DN $i$ 的 siteCode |
-| $s_i$ | DN $i$ 的开始卸货时间（即输出 eta） |
-| $L$ | 出仓时间上限 `latestShippingDate`（未给时为 $H$ ） |
-| $H$ | 时间上界 horizon |
-| $r = (v_1, \dots, v_m)$ | 一条路线按顺序访问的 DN |
-
-## 设计原则
-
-1. **始终持有一个完整可行解。** 第一步就构造逐单直送方案，之后每个阶段只在得到更好的可行解时替换。
-   预算在任何阶段耗尽，都能交付覆盖全部 DN 的结果。
-2. **不靠罚分漏单。** 不使用 `AddDisjunction`；每个保留 DN 都是必访节点。
-3. **求解器不是可信来源。** 输出前用纯 Python 独立重算全部约束，不依赖 OR-Tools 里的约束编码是否正确。
-4. **整数精确。** 距离 ×10³、载荷 ×10⁶ 精确缩放成整数，不能精确表示就报错，不做静默舍入。
-
-## 求解流程
-
-```mermaid
-flowchart TD
-    A[请求 JSON] --> B["校验与预处理<br/>models.py / problem.prepare"]
-    B -- 校验失败 --> X1([INVALID_INPUT])
-    B --> C{"有 DN 单独<br/>装不进任何车型?"}
-    C -- 是 --> X2([INFEASIBLE_INPUT])
-    C -- 否 --> D["逐单直送<br/>direct_fallback"]
-    D --> E["插入法初解<br/>initial.py"]
-    E --> F{车辆数优先?}
-    F -- 是 --> G["路线消除<br/>reduce.py"]
-    F -- 否 --> H
-    G --> H["OR-Tools 局部搜索<br/>solver._RoutingModel"]
-    H -- 找到解 --> I["routes ← 搜索结果<br/>ortools"]
-    H -- 超时 / 导入失败 --> J["保留初解<br/>insertion_fallback"]
-    I --> K["独立审计<br/>problem.validate_routes"]
-    J --> K
-    K -- 通过 --> OK([FEASIBLE])
-    K -- 失败 --> X3([SOLVER_ERROR])
-```
-
-| 阶段 | 预算 | 产出后的 `solutionSource` |
-|---|---|---|
-| 逐单直送 | — | `direct_fallback` |
-| 插入法初解 | $\min(0.2\,T,\ 40\text{ms})$ | `insertion_fallback` |
-| 路线消除 | $0.25\,T$ | `insertion_fallback` |
-| OR-Tools 搜索 | 剩余全部 | `ortools` |
-
-$T$ 为 `time_limit_ms`；每个阶段的截止时间同时不超过总截止时间。
-初解阶段在 `solver._seed_stages` 中按顺序挂接，新增阶段只需在这里加一项。
-
-整体流程（`solver.solve`）：
-
-```text
-function SOLVE(payload, T):
-    deadline ← now + T
-    problem ← PREPARE(VALIDATE(payload))            # 失败 → INVALID_INPUT
-    if ∃ i ∈ V: FITTING_VEHICLES({i}) = ∅:
-        return INFEASIBLE_INPUT
-    routes ← [ ([i], smallest fitting type) for i in V ]   # 逐单直送
-    for stage in SEED_STAGES(request):              # 插入初解；车辆数优先再加路线消除
-        stage_end ← min(deadline, now + min(stage.cap, stage.share · T))
-        routes ← stage.run(problem, routes, stage_end)
-    model ← BUILD_ROUTING_MODEL(problem, slots_per_type = |routes|)
-    solution ← model.SEARCH(initial = routes, deadline)
-    if solution ≠ null:
-        routes ← model.ROUTES(solution)             # 每条路线重选最小可装车型
-    VALIDATE_ROUTES(problem, routes)                # 失败 → SOLVER_ERROR
-    return FEASIBLE(routes)
-```
-
-### 1. 校验与预处理（`models.py`、`problem.prepare`）
-
-Pydantic 先校验结构、唯一性、日期格式（当地时间、整秒）。随后按 `(from, to)` 建立矩阵索引并检查冲突，
-对角线和同站内部边归零并告警：
-
-$$
-\sigma(i) = \sigma(j) \;\Rightarrow\; d_{ij} = t_{ij} = 0
-$$
-
-时间窗预检查逐单剔除。窗口为 `[]` 或 $a_i > b_i$ 时记 `EMPTY_TIME_WINDOW`；
-最早出仓直送仍晚于窗口上限时记 `DIRECT_TIME_WINDOW_UNREACHABLE`：
-
-$$
-t_{0i} > b_i
-$$
-
-时间以 `earliestShippingDate` 为零点、单位秒。时间上界取一个足以容纳任何路线的值：
-
-$$
-H = \max\bigl(0,\ L,\ \max_i b_i\bigr) + (N+1)\bigl(\max_{i,j} t_{ij} + u\bigr) + 1
-$$
-
-无时间窗的 DN 取 $[a_i, b_i] = [0, H]$ ；早于出仓的窗口下限截到 0。
-卸货时长 $u = \lceil 3600 \cdot \text{unloadingTime} \rceil$ 。
-
-### 2. 逐单直送
-
-每个 DN 单独一辆车，选最小可装车型。预检查已保证 $t_{0i} \le b_i$ ，且允许等待，
-因此直送总是可行，这是一个必然成立的完整解。
-
-### 3. 插入法初解（`initial.py`）
-
-先按 DN 相对仓库的方位角排序（扫描序），让相邻处理的 DN 空间上聚集：
-
-$$
-\text{key}(i) = \Bigl(\operatorname{atan2}(\text{lat}_i - \text{lat}_0,\ \text{lon}_i - \text{lon}_0),\ d_{0i},\ i\Bigr)
-$$
-
-坐标只决定处理顺序，不参与距离和可行性。然后逐单尝试插入：
-
-```text
-function BUILD_INITIAL_ROUTES(problem, deadline):
-    routes ← []
-    for i in SWEEP_ORDER(V):
-        direct ← ([i], smallest fitting type)
-        best, best_Δ ← null, (0, 0, 0)               # 与“另开一辆直送车”持平
-        for r in routes while now < deadline:
-            if not ADMITS(r ∪ {i}): continue          # 容量、站点数：与位置无关，每条路线查一次
-            for r' in INSERTIONS(r, i):               # 每个位置；检查站间距离、首段、时间窗
-                Δ ← COST(r') − COST(r) − COST(direct)
-                if Δ <ₗₑₓ best_Δ: best, best_Δ ← r', Δ
-        if best = null: routes.append(direct)       # 无改善或预算耗尽：直送，保证不漏单
-        else: replace r with best
-    return routes
-```
-
-增量 $\Delta$ 按目标优先级组成元组，按词典序比较。设合并后车型为 $k'$ 、原路线车型 $k$ 、直送车型 $k_i$ ：
-
-$$
-\Delta =
-\begin{cases}
-\bigl(-1,\ \Delta d,\ k' - k - k_i - 1\bigr) & \text{车辆数优先} \\
-\bigl(\Delta d,\ k' - k - k_i - 1,\ 0\bigr) & \text{距离优先}
-\end{cases}
-\qquad
-\Delta d = \ell(r') - \ell(r) - d_{0i}
-$$
-
-其中 $\ell(r) = d_{0 v_1} + \sum_{m} d_{v_m v_{m+1}}$ 为开放路线长度。车辆数优先时首位恒为 −1，
-所以只要存在可行插入就一定插入。
-
-### 4. 路线消除（`reduce.py`，仅车辆数优先）
-
-OR-Tools 的局部搜索算子一次只移动少量节点，难以清空一整条路线，车辆数基本停留在初解水平。
-这一阶段补上“拆掉整条路线”的复合移动。
-
-车辆数下界（ $G$ 为按计数口径去重的站点组， $Q$ 为 `maxSiteQty`，为 0 时不计最后一项）：
-
-$$
-LB = \max\left(
-\left\lceil \frac{\sum_i q^{vol}_i}{\max_k Q^{vol}_k} \right\rceil,\
-\left\lceil \frac{\sum_i q^{wt}_i}{\max_k Q^{wt}_k} \right\rceil,\
-\left\lceil \frac{|G|}{Q} \right\rceil
-\right)
-$$
-
-```text
-function REDUCE_ROUTES(problem, routes, deadline):
-    plans ← best ← routes;  stalls ← 0;  rng ← Random(seed = 0)
-    while |best| > LB and stalls < 200 and now < deadline:
-        smaller ← EMPTY_ONE_ROUTE(plans)
-        if smaller ≠ null: plans, stalls ← smaller, 0
-        else:              plans, stalls ← SHAKE(plans), stalls + 1
-        best ← argmin_{|·|}(best, plans)
-    return best (each route with smallest fitting type)
-
-function EMPTY_ONE_ROUTE(plans):
-    for victim in 6 shortest routes (ties broken randomly):
-        rest ← plans \ {victim}
-        if every i in SHUFFLE(victim) can be CHEAPEST_INSERTed into rest:
-            return rest                              # 少一辆车
-    return null
-
-function SHAKE(plans):                             # 在满载路线之间腾空位
-    repeat 20 times:
-        pick random routes src ≠ dst and random i ∈ src
-        if src \ {i} stays feasible and dst can take i at some feasible position:
-            move i from src to dst (first feasible position)
-    drop empty routes
-```
-
-`CHEAPEST_INSERT` 选距离增量最小的可行位置。每个中间方案都经完整约束检查，随机数固定种子，结果可复现。
-
-### 5. OR-Tools 局部搜索（`solver._RoutingModel`）
-
-#### 图与车辆槽位
+先拿到一个肯定可行的方案，再在时间预算内逐步改进；任何一步没得到更好的可行解，就保留上一步的结果。
 
 ```mermaid
 flowchart LR
-    D((0 仓库)) --> A((DN 1))
-    D --> B((DN 2))
-    A --> B
-    B --> A
-    A -. 0 .-> S((N+1 虚拟终点))
-    B -. 0 .-> S
-    D -. 空车 .-> S
-    subgraph 槽位["槽位 = K 个车型 × R 辆"]
-        direction TB
-        T0["车型 0：槽位 0 … R−1"]
-        T1["车型 1：槽位 R … 2R−1"]
-        TK["…"]
-    end
+    A[校验与预处理] --> B[逐单直送] --> C[插入法初解] --> D["路线消除<br/>（仅车辆数优先）"] --> E[OR-Tools 搜索] --> F[独立审计]
 ```
 
-- **开放路线**：增加虚拟终点 $N+1$ 作为所有槽位的终点， $d_{i,N+1} = t_{i,N+1} = 0$ 。
-- **车辆槽位**：每种车型预留 $R$ 个槽位（ $R$ = 初解路线数），共 $K \cdot R$ 个，按车型分块。
-  槽位只是数学表示，不是车源上限：总槽位已是初解车数的 $K$ 倍，足够搜索拆分路线。
-  按 $N$ 个槽位建模时，100 单 6 车型仅建模就要约 0.8 秒，见
-  [benchmark](benchmark.md#距离优先的车辆槽位2026-10-27)。
+| 步骤 | 代码 | 时间预算 | 完成后的 `solutionSource` |
+|---|---|---|---|
+| 校验与预处理 | `models.py`、`problem.prepare` | — | |
+| 逐单直送 | `solver.solve` | — | `direct_fallback` |
+| 插入法初解 | `initial.py` | 总预算 20%，最多 40ms | `insertion_fallback` |
+| 路线消除 | `reduce.py` | 总预算 25% | `insertion_fallback` |
+| OR-Tools 搜索 | `solver._RoutingModel` | 剩余全部 | `ortools` |
+| 独立审计 | `problem.validate_routes` | — | |
 
-#### 目标函数
+几条贯穿全程的原则：
 
-设 $\mathcal{R}$ 为非空路线集合， $k(r)$ 为路线所在槽位的车型：
+- **不漏单。** 每个保留 DN 都必须安排，不用罚分换取漏单（不使用 `AddDisjunction`）。
+- **不信任求解器。** 最后用纯 Python 重算全部约束；审计不过就返回 `SOLVER_ERROR`，不交付路线。
+- **整数精确。** 距离 ×10³、载荷 ×10⁶ 转成整数，不能精确表示就报错，不悄悄舍入。
 
-$$
-\min\ \ C = W_v \cdot |\mathcal{R}| \;+\; W_d \sum_{r \in \mathcal{R}} \ell(r) \;+\; \sum_{r \in \mathcal{R}} \bigl(k(r) + 1\bigr)
-$$
+## 1. 校验与预处理
 
-实现上，弧成本为 $W_d \cdot d_{ij}$ ，每个槽位的固定成本为 $W_v + k + 1$ 。权重由全局上界推出，保证严格词典序
-——高一级目标的一个单位大于所有低级目标之和：
+- 校验字段、唯一性和日期格式，建立 `(from, to)` 矩阵索引并检查缺失与冲突。
+- 同 siteCode 的 DN 之间距离和耗时归零（视为同一地点）。
+- 剔除空时间窗、以及最早出仓直送也赶不上窗口上限的 DN。
+- 车型按（容积, 载重, 名称）从小到大编号，编号就是“车型等级”。
+- 时间统一换算成“距最早出仓的秒数”。
 
-$$
-\begin{aligned}
-R_{\max} &= N K & &\text{车型等级和的上界} \\
-W_d &= R_{\max} + 1 \\
-D_{\max} &= N \cdot \max_{i,j} d_{ij} & &\text{总距离的上界} \\
-C_{\max} &= W_d \, D_{\max} + R_{\max} & &\text{距离与等级成本的上界} \\
-W_v &= \begin{cases} C_{\max} + 1 & \text{车辆数优先} \\ 0 & \text{距离优先} \end{cases}
-\end{aligned}
-$$
+## 2. 逐单直送
 
-若 $N \cdot W_v + C_{\max} \ge 2^{60}$ ，返回 `OBJECTIVE_OVERFLOW`，避免 int64 溢出。
+每个 DN 单独派一辆装得下的最小车。预处理已保证直送能赶上时间窗（早到可以等），所以这一定是可行解，
+也是后面所有步骤的兜底。
 
-#### 约束
+## 3. 插入法初解
 
-设 $x_{ij}^{p} = 1$ 表示槽位 $p$ 从 $i$ 直接到 $j$ ， $v(i)$ 为配送 $i$ 的槽位。
+1. 按 DN 相对仓库的方位角排序（扫描序），让先后处理的 DN 在地理上相邻。坐标只用来排序。
+2. 依次处理每个 DN：试遍已有路线的每个插入位置，选目标最好的那个；如果都不如单独派车，就新开一辆。
+3. 预算用完后，剩下的 DN 直接单独派车。
 
-**容量**（体积、重量两个维度，每个槽位绑定其车型容量）：
+“目标最好”按优先级逐项比较：车辆数优先模式下先比车辆数，所以只要能插就一定插；
+距离优先模式下先比新增距离。
 
-$$
-\sum_{i:\,v(i)=p} q^{vol}_i \le Q^{vol}_{k(p)}, \qquad \sum_{i:\,v(i)=p} q^{wt}_i \le Q^{wt}_{k(p)}
-$$
+## 4. 路线消除（仅车辆数优先）
 
-**时间**（`Time` 维度，累计值 $s_i$ 即开始卸货时间，松弛量允许等待）：离开一个实际站点时计一次卸货，
-同站 DN 之间不计。
+OR-Tools 的局部搜索每次只挪动少量 DN，很难把一整条路线清空，所以车辆数基本减不下来。这一步专门做减车：
 
-$$
-x_{ij}^{p} = 1 \;\Rightarrow\; s_j \ge s_i + t_{ij} + u \cdot \mathbb{1}[\sigma(i) \ne \sigma(j)],
-\qquad a_i \le s_i \le b_i,
-\qquad 0 \le s_{\text{start}(p)} \le L
-$$
+1. 从最短的几条路线中挑一条拆掉，把它的 DN 逐个插到其余路线中距离增加最少的可行位置。
+   全部插进去就少了一辆车。
+2. 插不进去时随机挪动一些 DN（保持可行），给满载的路线腾出空位，再重试。
+3. 达到车辆数下界、连续失败 200 次或预算用完时停止，取车辆最少的方案。
 
-**同站连续、共用 eta**（`Position` 序位维度 $\pi_i$ ； $c_g(p)$ 为槽位 $p$ 上站点组 $g$ 的 DN 数）。
-对同一 siteCode 中任意两单 $i \ne j$ ：
+车辆数下界取三者最大值：
 
 $$
-\begin{aligned}
-\pi_i - \pi_j &\le c_g\bigl(v(i)\bigr) - 1 + N \bigl(1 - \mathbb{1}[v(i) = v(j)]\bigr) \\
-s_i - s_j &\le H \bigl(1 - \mathbb{1}[v(i) = v(j)]\bigr)
-\end{aligned}
+LB = \max\left(
+\left\lceil \frac{\text{总体积}}{\text{最大容积}} \right\rceil,\
+\left\lceil \frac{\text{总重量}}{\text{最大载重}} \right\rceil,\
+\left\lceil \frac{\text{去重站点数}}{\text{maxSiteQty}} \right\rceil
+\right)
 $$
 
-同车时序位差不超过组大小减一，组内必须连续；两个方向的时间不等式合起来即 $s_i = s_j$ 。不同车时约束放松。
+随机数用固定种子，同样输入得到同样结果。
 
-**站点数**（ $G$ 为按计数口径分的组， $Q$ 为 `maxSiteQty`）：
+## 5. OR-Tools 搜索
 
-$$
-\sum_{g \in G} \max_{i \in g} \mathbb{1}[v(i) = p] \le Q \qquad \forall p
-$$
+把当前方案导入 OR-Tools 路由模型，用引导局部搜索（Guided Local Search）在剩余时间里继续改进。
 
-每组只有一个 DN 时退化为计数维度（每个 DN 计 1，累计 ≤ $Q$ ）； $Q = 0$ 或 $Q \ge |G|$ 时省略。
+### 模型怎么表示业务
 
-**站间距离上限**（ $\bar d$ 为 `siteDistanceLimit`）：直接从 `NextVar` 中移除禁用后继，仓库出发的边不受限。
+**开放路线**：所有车的终点是一个虚拟节点，进入它的距离和耗时都是 0，相当于不返仓。
 
-$$
-i, j \in V,\ d_{ij} > \bar d \;\Rightarrow\; x_{ij}^{p} = 0 \quad \forall p
-$$
+**车型不限数量**：OR-Tools 需要固定车辆数，所以每种车型预留 $R$ 个“槽位”（ $R$ 取初解的路线数）。
+槽位只是建模手段，不限制实际车源：总槽位是初解车数的 $K$ 倍（ $K$ 为车型数），足够搜索。
+读出结果后，每条路线再换成装得下的最小车型。
 
-**首段约束**（`FirstLeg` 预算维度）：出仓存入首段距离，每段站间距离扣减，余额不得为负。
+**约束对应关系**：
 
-$$
-B_1 = d_{0 v_1}, \qquad B_{m+1} = B_m - d_{v_m v_{m+1}} \ge 0
-\;\;\Longleftrightarrow\;\;
-\sum_{m=1}^{|r|-1} d_{v_m v_{m+1}} \le d_{0 v_1}
-$$
+| 业务约束 | 模型中的写法 |
+|---|---|
+| 体积、重量 | 两个容量维度，每个槽位的容量等于它的车型 |
+| 时间窗 | 时间维度，节点上的值就是开始卸货时间；允许等待 |
+| 同站连续、共用 eta | 序位维度限制同车同站 DN 必须连着，并令其开始卸货时间相等 |
+| 每车站点数 | 按计数口径统计每辆车访问的站点组数 |
+| 站间距离上限 | 直接删掉超限的边 |
+| 站间距离和 ≤ 首段距离 | “预算”维度，见下 |
 
-首段约束最初用 `solver.Add` 表达，局部搜索过滤器看不到它，插入类算子产生的候选几乎都在最终 CP 检查中被否决。
-改成维度后过滤器可直接判断，距离明显改善（见 [benchmark](benchmark.md#首段约束改为预算维度2026-10-27)）。
-
-#### 搜索与读取
-
-```text
-function SEARCH(model, initial, deadline):
-    if remaining(deadline) ≤ 0: return null
-    CLOSE_MODEL(params: GUIDED_LOCAL_SEARCH, use_full_propagation)
-    assignment ← READ_ASSIGNMENT_FROM_ROUTES(place each route into a free slot of its type)
-    if assignment = null or remaining(deadline) ≤ 0: return null
-    return SOLVE_FROM_ASSIGNMENT(assignment, time_limit = remaining(deadline))
-
-function ROUTES(solution):
-    for each slot p with a non-empty path r:
-        emit (r, smallest type that fits r)          # 可能比槽位车型更小
-```
-
-每个耗时步骤后都重算剩余预算；预算不足或导入失败时保留上一阶段的方案。
-
-### 6. 独立审计（`problem.validate_routes`）
-
-对每条路线 $r = (v_1, \dots, v_m)$ 检查：
-
-- 容量：存在车型同时装得下体积与重量，且输出车型就是其中之一；
-- 站点数：去重组数 $\le Q$ ；
-- 站间距离： $d_{v_m v_{m+1}} \le \bar d$ ；首段： $\sum d_{v_m v_{m+1}} \le d_{0 v_1}$ ；
-- 时间表：按最早出仓顺推（`Problem.schedule`），同时检查同站连续与不重访；
-- 覆盖：所有路线的 DN 合起来恰好等于 $V$ ，无漏单、无重复。
-
-时间表把同站连续的 DN 合成一次停靠 $g$ ，从上一次停靠的结束时间 $f_{\text{prev}}$ 推出：
+时间维度中，从 $i$ 到 $j$ 的耗时是行驶时间加上在 $i$ 的卸货时间；同站 DN 之间不重复计卸货：
 
 $$
-\begin{aligned}
-\text{arrival}_g &= f_{\text{prev}} + t_{\text{prev},\,g} & (f_0 = 0) \\
-s_g &= \max\bigl(\text{arrival}_g,\ \max_{i \in g} a_i\bigr) \\
-s_g &\le \min_{i \in g} b_i & &\text{否则违规} \\
-f_g &= s_g + u
-\end{aligned}
+s_j \ge s_i + t_{ij} + \begin{cases} 0 & i, j \text{ 同站} \\ u & \text{否则} \end{cases}
 $$
 
-输出的 eta 就是这里的 $s_g$ ，与审计口径一致。任一检查失败即 `SOLVER_ERROR`。
+其中 $s$ 为开始卸货时间， $t_{ij}$ 为行驶耗时， $u$ 为卸货时长。
+
+首段约束写成一个余额：出仓时存入首段距离，之后每走一段站间距离就扣掉，余额不能为负。
+这与“站间距离之和 ≤ 首段距离”等价，但 OR-Tools 搜索时能直接看到它，比通用约束有效得多
+（见 [benchmark](benchmark.md#首段约束改为预算维度2026-10-27)）。
+
+### 目标函数
+
+多个目标要严格按优先级比较，做法是给高优先级目标足够大的权重，让它的 1 个单位超过所有低优先级目标之和：
+
+$$
+\text{成本} = W_v \times \text{车辆数} + W_d \times \text{总距离} + \text{车型等级之和}
+$$
+
+- $W_d$ 大于车型等级之和的最大可能值，所以距离优先于车型；
+- 车辆数优先时 $W_v$ 大于“距离 + 车型”部分的最大可能值；距离优先时 $W_v = 0$ 。
+
+权重过大可能超出 int64 时，返回 `OBJECTIVE_OVERFLOW`。
+
+## 6. 独立审计
+
+对最终每条路线重新检查容量、站点数、站间距离、首段约束和时间窗，并确认每个保留 DN 恰好出现一次。
+
+时间表按最早出仓逐站推算（同站多个 DN 合成一次停靠）：
+
+$$
+\text{开始卸货} = \max(\text{到达时间},\ \text{窗口下限}),\qquad
+\text{离开} = \text{开始卸货} + u
+$$
+
+开始卸货时间不得晚于窗口上限。输出的 eta 就是这里算出的开始卸货时间。
 
 ## 时间预算
 
-`time_limit_ms` 覆盖 `solve()` 内的全部计算，是**尽力而为**的预算，不是硬实时承诺：
-预处理、建模、模型关闭、初解导入、审计都消耗时间，部分 OR-Tools 原生调用不能在任意时点中断，
-实际耗时可能略超预算。预算很短时可能不进入搜索，结果来自插入初解。
+`time_limit_ms` 是整体计算的**尽力**预算，不是硬实时承诺。建模、导入初解、审计都要花时间，
+部分 OR-Tools 调用中途无法打断，实际耗时可能略超。
 
-100 DN 时，200ms 通常只够完成初解；需要更短的距离建议给 1–3 秒。实测数据见 [benchmark](benchmark.md)。
+100 个 DN 时，200ms 基本只够完成初解，来不及进入 OR-Tools 搜索；想要更短的距离建议给 1–3 秒。
+实测数据见 [benchmark](benchmark.md)。
 
 ## 已知局限
 
-- 200ms 内 100 DN 基本不进入搜索，尚未达到原始性能目标。
-- 车辆数优先时，OR-Tools 本身仍难以减车，减车主要依赖路线消除阶段。
-- 有限时间的结果不提供最优性证明或与最优解的差距。
-
-参考：
-
-- https://developers.google.com/optimization/routing/routing_tasks
-- https://developers.google.com/optimization/routing/dimensions
+- 100 DN / 200ms 的性能目标尚未达到。
+- 车辆数优先时，减车主要靠路线消除，OR-Tools 自身很少能减车。
+- 结果只保证可行，不证明最优。
