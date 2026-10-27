@@ -28,4 +28,4 @@ testpaths = ["tests"]
 venvPath = "."
 venv = ".venv"
 extraPaths = ["src"]
-include = ["src", "tests", "scripts", "benchmarks"]
+include = ["src", "tests", "scripts"]
