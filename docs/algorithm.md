@@ -8,7 +8,7 @@
 |---|---|
 | $0$ | 仓库节点 |
 | $V = \{1, \dots, N\}$ | 保留下来的 DN 节点 |
-| $K$ | 车型数；车型按（容积, 载重, 名称）升序编号为 $k = 0, \dots, K-1$，编号即车型等级 |
+| $K$ | 车型数；车型按（容积, 载重, 名称）升序编号为 $k = 0, \dots, K-1$ ，编号即车型等级 |
 | $Q^{vol}_k,\ Q^{wt}_k$ | 车型 $k$ 的容积、载重 |
 | $q^{vol}_i,\ q^{wt}_i$ | DN $i$ 的体积、重量 |
 | $d_{ij},\ t_{ij}$ | 有向距离（×1000 后的整数）、行驶耗时（秒） |
@@ -16,7 +16,7 @@
 | $u$ | 每次停靠的卸货时长（秒） |
 | $\sigma(i)$ | DN $i$ 的 siteCode |
 | $s_i$ | DN $i$ 的开始卸货时间（即输出 eta） |
-| $L$ | 出仓时间上限 `latestShippingDate`（未给时为 $H$） |
+| $L$ | 出仓时间上限 `latestShippingDate`（未给时为 $H$ ） |
 | $H$ | 时间上界 horizon |
 | $r = (v_1, \dots, v_m)$ | 一条路线按顺序访问的 DN |
 
@@ -82,32 +82,32 @@ function SOLVE(payload, T):
 
 ### 1. 校验与预处理（`models.py`、`problem.prepare`）
 
-- Pydantic 校验结构、唯一性、日期格式（当地时间、整秒）。
-- 按 `(from, to)` 建立矩阵索引，检查冲突；对角线、同站内部边归零并告警：
+Pydantic 先校验结构、唯一性、日期格式（当地时间、整秒）。随后按 `(from, to)` 建立矩阵索引并检查冲突，
+对角线和同站内部边归零并告警：
 
-  $$
-  \sigma(i) = \sigma(j) \;\Rightarrow\; d_{ij} = t_{ij} = 0
-  $$
+$$
+\sigma(i) = \sigma(j) \;\Rightarrow\; d_{ij} = t_{ij} = 0
+$$
 
-- 时间窗预检查，逐单剔除：
+时间窗预检查逐单剔除。窗口为 `[]` 或 $a_i > b_i$ 时记 `EMPTY_TIME_WINDOW`；
+最早出仓直送仍晚于窗口上限时记 `DIRECT_TIME_WINDOW_UNREACHABLE`：
 
-  $$
-  \text{EMPTY\_TIME\_WINDOW}: a_i > b_i \text{ 或窗口为 } [\,] \qquad
-  \text{DIRECT\_TIME\_WINDOW\_UNREACHABLE}: t_{0i} > b_i
-  $$
+$$
+t_{0i} > b_i
+$$
 
-- 时间以 `earliestShippingDate` 为零点、单位秒。时间上界取一个足以容纳任何路线的值：
+时间以 `earliestShippingDate` 为零点、单位秒。时间上界取一个足以容纳任何路线的值：
 
-  $$
-  H = \max\bigl(0,\ L,\ \max_i b_i\bigr) + (N+1)\bigl(\max_{i,j} t_{ij} + u\bigr) + 1
-  $$
+$$
+H = \max\bigl(0,\ L,\ \max_i b_i\bigr) + (N+1)\bigl(\max_{i,j} t_{ij} + u\bigr) + 1
+$$
 
-  无时间窗的 DN 取 $[a_i, b_i] = [0, H]$；早于出仓的窗口下限截到 0。
-- 卸货时长 $u = \lceil 3600 \cdot \text{unloadingTime} \rceil$。
+无时间窗的 DN 取 $[a_i, b_i] = [0, H]$ ；早于出仓的窗口下限截到 0。
+卸货时长 $u = \lceil 3600 \cdot \text{unloadingTime} \rceil$ 。
 
 ### 2. 逐单直送
 
-每个 DN 单独一辆车，选最小可装车型。预检查已保证 $t_{0i} \le b_i$，且允许等待，
+每个 DN 单独一辆车，选最小可装车型。预检查已保证 $t_{0i} \le b_i$ ，且允许等待，
 因此直送总是可行，这是一个必然成立的完整解。
 
 ### 3. 插入法初解（`initial.py`）
@@ -136,7 +136,7 @@ function BUILD_INITIAL_ROUTES(problem, deadline):
     return routes
 ```
 
-增量 $\Delta$ 按目标优先级组成元组，按词典序比较。设合并后车型为 $k'$、原路线车型 $k$、直送车型 $k_i$：
+增量 $\Delta$ 按目标优先级组成元组，按词典序比较。设合并后车型为 $k'$ 、原路线车型 $k$ 、直送车型 $k_i$ ：
 
 $$
 \Delta =
@@ -156,7 +156,7 @@ $$
 OR-Tools 的局部搜索算子一次只移动少量节点，难以清空一整条路线，车辆数基本停留在初解水平。
 这一阶段补上“拆掉整条路线”的复合移动。
 
-车辆数下界（$G$ 为按计数口径去重的站点组，$Q$ 为 `maxSiteQty`，为 0 时不计最后一项）：
+车辆数下界（ $G$ 为按计数口径去重的站点组， $Q$ 为 `maxSiteQty`，为 0 时不计最后一项）：
 
 $$
 LB = \max\left(
@@ -214,21 +214,21 @@ flowchart LR
     end
 ```
 
-- **开放路线**：增加虚拟终点 $N+1$ 作为所有槽位的终点，$d_{i,N+1} = t_{i,N+1} = 0$。
-- **车辆槽位**：每种车型预留 $R$ 个槽位（$R$ = 初解路线数），共 $K \cdot R$ 个，按车型分块。
+- **开放路线**：增加虚拟终点 $N+1$ 作为所有槽位的终点， $d_{i,N+1} = t_{i,N+1} = 0$ 。
+- **车辆槽位**：每种车型预留 $R$ 个槽位（ $R$ = 初解路线数），共 $K \cdot R$ 个，按车型分块。
   槽位只是数学表示，不是车源上限：总槽位已是初解车数的 $K$ 倍，足够搜索拆分路线。
   按 $N$ 个槽位建模时，100 单 6 车型仅建模就要约 0.8 秒，见
   [benchmark](benchmark.md#距离优先的车辆槽位2026-10-27)。
 
 #### 目标函数
 
-设 $\mathcal{R}$ 为非空路线集合，$k(r)$ 为路线所在槽位的车型：
+设 $\mathcal{R}$ 为非空路线集合， $k(r)$ 为路线所在槽位的车型：
 
 $$
 \min\ \ C = W_v \cdot |\mathcal{R}| \;+\; W_d \sum_{r \in \mathcal{R}} \ell(r) \;+\; \sum_{r \in \mathcal{R}} \bigl(k(r) + 1\bigr)
 $$
 
-实现上，弧成本为 $W_d \cdot d_{ij}$，每个槽位的固定成本为 $W_v + k + 1$。权重由全局上界推出，保证严格词典序
+实现上，弧成本为 $W_d \cdot d_{ij}$ ，每个槽位的固定成本为 $W_v + k + 1$ 。权重由全局上界推出，保证严格词典序
 ——高一级目标的一个单位大于所有低级目标之和：
 
 $$
@@ -241,11 +241,11 @@ W_v &= \begin{cases} C_{\max} + 1 & \text{车辆数优先} \\ 0 & \text{距离�
 \end{aligned}
 $$
 
-若 $N \cdot W_v + C_{\max} \ge 2^{60}$，返回 `OBJECTIVE_OVERFLOW`，避免 int64 溢出。
+若 $N \cdot W_v + C_{\max} \ge 2^{60}$ ，返回 `OBJECTIVE_OVERFLOW`，避免 int64 溢出。
 
 #### 约束
 
-设 $x_{ij}^{p} = 1$ 表示槽位 $p$ 从 $i$ 直接到 $j$，$v(i)$ 为配送 $i$ 的槽位。
+设 $x_{ij}^{p} = 1$ 表示槽位 $p$ 从 $i$ 直接到 $j$ ， $v(i)$ 为配送 $i$ 的槽位。
 
 **容量**（体积、重量两个维度，每个槽位绑定其车型容量）：
 
@@ -262,8 +262,8 @@ x_{ij}^{p} = 1 \;\Rightarrow\; s_j \ge s_i + t_{ij} + u \cdot \mathbb{1}[\sigma(
 \qquad 0 \le s_{\text{start}(p)} \le L
 $$
 
-**同站连续、共用 eta**（`Position` 序位维度 $\pi_i$；$c_g(p)$ 为槽位 $p$ 上站点组 $g$ 的 DN 数）。
-对同一 siteCode 中任意两单 $i \ne j$：
+**同站连续、共用 eta**（`Position` 序位维度 $\pi_i$ ； $c_g(p)$ 为槽位 $p$ 上站点组 $g$ 的 DN 数）。
+对同一 siteCode 中任意两单 $i \ne j$ ：
 
 $$
 \begin{aligned}
@@ -272,17 +272,17 @@ s_i - s_j &\le H \bigl(1 - \mathbb{1}[v(i) = v(j)]\bigr)
 \end{aligned}
 $$
 
-同车时序位差不超过组大小减一，组内必须连续；两个方向的时间不等式合起来即 $s_i = s_j$。不同车时约束放松。
+同车时序位差不超过组大小减一，组内必须连续；两个方向的时间不等式合起来即 $s_i = s_j$ 。不同车时约束放松。
 
-**站点数**（$G$ 为按计数口径分的组，$Q$ 为 `maxSiteQty`）：
+**站点数**（ $G$ 为按计数口径分的组， $Q$ 为 `maxSiteQty`）：
 
 $$
 \sum_{g \in G} \max_{i \in g} \mathbb{1}[v(i) = p] \le Q \qquad \forall p
 $$
 
-每组只有一个 DN 时退化为计数维度（每个 DN 计 1，累计 ≤ $Q$）；$Q = 0$ 或 $Q \ge |G|$ 时省略。
+每组只有一个 DN 时退化为计数维度（每个 DN 计 1，累计 ≤ $Q$ ）； $Q = 0$ 或 $Q \ge |G|$ 时省略。
 
-**站间距离上限**（$\bar d$ 为 `siteDistanceLimit`）：直接从 `NextVar` 中移除禁用后继，仓库出发的边不受限。
+**站间距离上限**（ $\bar d$ 为 `siteDistanceLimit`）：直接从 `NextVar` 中移除禁用后继，仓库出发的边不受限。
 
 $$
 i, j \in V,\ d_{ij} > \bar d \;\Rightarrow\; x_{ij}^{p} = 0 \quad \forall p
@@ -321,12 +321,12 @@ function ROUTES(solution):
 对每条路线 $r = (v_1, \dots, v_m)$ 检查：
 
 - 容量：存在车型同时装得下体积与重量，且输出车型就是其中之一；
-- 站点数：去重组数 $\le Q$；
-- 站间距离：$d_{v_m v_{m+1}} \le \bar d$；首段：$\sum d_{v_m v_{m+1}} \le d_{0 v_1}$；
+- 站点数：去重组数 $\le Q$ ；
+- 站间距离： $d_{v_m v_{m+1}} \le \bar d$ ；首段： $\sum d_{v_m v_{m+1}} \le d_{0 v_1}$ ；
 - 时间表：按最早出仓顺推（`Problem.schedule`），同时检查同站连续与不重访；
-- 覆盖：所有路线的 DN 合起来恰好等于 $V$，无漏单、无重复。
+- 覆盖：所有路线的 DN 合起来恰好等于 $V$ ，无漏单、无重复。
 
-时间表把同站连续的 DN 合成一次停靠 $g$，从上一次停靠的结束时间 $f_{\text{prev}}$ 推出：
+时间表把同站连续的 DN 合成一次停靠 $g$ ，从上一次停靠的结束时间 $f_{\text{prev}}$ 推出：
 
 $$
 \begin{aligned}
@@ -337,7 +337,7 @@ f_g &= s_g + u
 \end{aligned}
 $$
 
-输出的 eta 就是这里的 $s_g$，与审计口径一致。任一检查失败即 `SOLVER_ERROR`。
+输出的 eta 就是这里的 $s_g$ ，与审计口径一致。任一检查失败即 `SOLVER_ERROR`。
 
 ## 时间预算
 
