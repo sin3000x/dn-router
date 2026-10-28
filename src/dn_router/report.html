@@ -49,9 +49,10 @@ details.card{margin-bottom:16px}details.card>summary{cursor:pointer;list-style:n
 .meter{height:4px;border-radius:2px;background:var(--surface-2);overflow:hidden}.meter i{display:block;height:100%;background:var(--c,var(--accent));border-radius:2px}
 
 .map-card{display:flex;flex-direction:column}
-#map{display:block;width:100%;height:520px;flex:1;touch-action:none;cursor:grab;background-color:var(--surface);background-image:radial-gradient(var(--border) 1px,transparent 1px);background-size:22px 22px;border-radius:0 0 12px 12px}#map:active{cursor:grabbing}
+#map{display:block;width:100%;height:520px;flex:1;touch-action:none;cursor:grab;background-color:var(--surface);background-image:radial-gradient(var(--border) 1px,transparent 1px);background-size:22px 22px;border-radius:0 0 12px 12px;user-select:none;-webkit-user-select:none}#map:active{cursor:grabbing}#map g[data-stops]{cursor:pointer}
 #map text{font-size:13px;fill:var(--text);paint-order:stroke;stroke:var(--surface);stroke-width:4px;stroke-linejoin:round;pointer-events:none}#map text.num{fill:#fff;stroke:none;font-size:12px;font-weight:600}#map text.strong{font-weight:600}
 .map-foot{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:10px 16px;border-top:1px solid var(--line);font-size:13px;color:var(--muted)}.map-foot .warn{color:var(--warn)}
+.stop-info{display:flex;align-items:flex-start;gap:12px;padding:10px 16px;border-top:1px solid var(--line);background:var(--accent-soft)}.stop-info pre{flex:1;margin:0;tab-size:2;font:13px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace;white-space:pre-wrap;overflow-wrap:anywhere;user-select:text;-webkit-user-select:text}
 
 /* 时间轴：播放控件、阶段图例、甘特图与当前时刻游标。 */
 .clock{font:600 20px ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--text)}
@@ -122,9 +123,10 @@ dialog textarea{display:block;width:100%;height:50vh;border:0;border-top:1px sol
 
 <div class="grid">
 <aside class="card"><div class="card-head"><div><h2>车辆与路线</h2><div class="sub" id="route-count"></div></div></div><div class="route-list" id="routes"></div></aside>
-<section class="card map-card"><div class="card-head"><div><h2>路线示意</h2><div class="sub">滚轮缩放 · 拖动平移 · 数字为停靠顺序</div></div>
+<section class="card map-card"><div class="card-head"><div><h2>路线示意</h2><div class="sub">滚轮缩放 · 拖动平移 · 点击站点可复制信息</div></div>
 <div class="tools"><button class="btn icon" type="button" id="zoom-in" aria-label="放大">+</button><button class="btn icon" type="button" id="zoom-out" aria-label="缩小">−</button><button class="btn" type="button" id="reset">重置</button></div></div>
 <svg id="map" viewBox="0 0 960 520" role="img" aria-label="按经纬度绘制的配送路线"></svg>
+<div class="stop-info" id="stop-info" hidden><pre id="stop-text"></pre><button class="btn" type="button" id="stop-copy">复制</button><button class="btn icon" type="button" id="stop-close" aria-label="关闭">×</button></div>
 <div class="map-foot"><span>经纬度直线示意，不代表道路；开放路线止于末站，不绘制返仓。车辆位置按时间插值。</span><span class="warn" id="mapnote"></span></div>
 </section>
 </div>
@@ -243,7 +245,7 @@ function routeList(){
 
 // 路线筛选同时驱动地图、甘特图和明细，不改变全局播放时刻。
 function visible(){return routes.map((r,i)=>({r,i})).filter(x=>selected<0||x.i===selected);}
-function select(i){selected=i;zoom=1;pan=[0,0];[...$('routes').children].forEach((b,j)=>b.setAttribute('aria-pressed',String(j===i+1)));drawGantt();details();updateTime();draw();}
+function select(i){selected=i;zoom=1;pan=[0,0];showStops(null);[...$('routes').children].forEach((b,j)=>b.setAttribute('aria-pressed',String(j===i+1)));drawGantt();details();updateTime();draw();}
 
 // 按可见坐标拟合视图，用纬度余弦修正经度比例；缩放在投影后应用，标记尺寸保持不变。
 function draw(){
@@ -280,7 +282,7 @@ function draw(){
     const marks=new Map();
     r.stops.forEach((s,j)=>{if(!s.coordinate)return;const key=s.coordinate.join(',');if(!marks.has(key))marks.set(key,[]);marks.get(key).push([s,j]);});
     for(const group of marks.values()){
-      const [x,y]=xy(group[0][0].coordinate),g=sv('g',{},nodes),label=group.map(([,j])=>j+1).join('·'),w=Math.max(22,label.length*7+10);
+      const [x,y]=xy(group[0][0].coordinate),g=sv('g',{'data-route':i,'data-stops':group.map(([,j])=>j).join(',')},nodes),label=group.map(([,j])=>j+1).join('·'),w=Math.max(22,label.length*7+10);
       sv('rect',{x:x-w/2,y:y-11,width:w,height:22,rx:11,fill:c,stroke:'var(--surface)','stroke-width':2.5},g);const n=sv('text',{x,y:y+4,'text-anchor':'middle',class:'num'},g);n.textContent=label;
       sv('title',{},g).textContent=group.map(([s,j])=>r.routeId+' · 第 '+(j+1)+' 站 · '+s.siteCode+'\n'+s.orderReleaseIds.join(', ')+(s.arrivalTime?'\n开始卸货 '+s.arrivalTime:'')).join('\n\n');
       if(showLabels)for(const [s,j]of group){const key=s.coordinate.join(','),slot=labelSlots.get(key)||0;labelSlots.set(key,slot+1);const t=sv('text',{x:x+w/2+6,y:y+4+slot*16},g);t.textContent=(selected<0?r.routeId+' ':'')+'#'+(j+1)+' '+s.siteCode;}
@@ -300,9 +302,25 @@ function draw(){
 function toView(e){const m=$('map').getScreenCTM();return [(e.clientX-m.e)/m.a,(e.clientY-m.f)/m.d];}
 function zoomAt(q,factor){const z=Math.min(16,Math.max(.4,zoom*factor));pan=[q[0]-(q[0]-pan[0])*z/zoom,q[1]-(q[1]-pan[1])*z/zoom];zoom=z;draw();}
 $('map').addEventListener('wheel',e=>{e.preventDefault();zoomAt(toView(e),e.deltaY<0?1.15:1/1.15);},{passive:false});
-$('map').addEventListener('pointerdown',e=>{drag={p:toView(e),pan:[...pan]};$('map').setPointerCapture(e.pointerId);});
+// 指针捕获后 pointerup 的目标是整个地图，所以按下时记住命中的站点标记；移动不超过 4 像素才算点击。
+$('map').addEventListener('pointerdown',e=>{drag={p:toView(e),pan:[...pan],x:e.clientX,y:e.clientY,mark:e.target.closest('g[data-stops]')};$('map').setPointerCapture(e.pointerId);});
 $('map').addEventListener('pointermove',e=>{if(!drag)return;const p=toView(e);pan=[drag.pan[0]+p[0]-drag.p[0],drag.pan[1]+p[1]-drag.p[1]];draw();});
-for(const ev of ['pointerup','pointercancel'])$('map').addEventListener(ev,()=>drag=null);
+$('map').addEventListener('pointerup',e=>{if(drag&&Math.hypot(e.clientX-drag.x,e.clientY-drag.y)<4){const m=drag.mark;showStops(m?[Number(m.dataset.route),m.dataset.stops.split(',').map(Number)]:null);}drag=null;});
+$('map').addEventListener('pointercancel',()=>drag=null);
+
+// 点中的站点信息放在地图下方的可选中文本里，一行一站，字段以制表符分隔，粘贴到表格时自动分列。
+function showStops(p){
+  $('stop-info').hidden=!p;if(!p)return;
+  const r=routes[p[0]];
+  $('stop-text').textContent=p[1].map(j=>{const s=r.stops[j];return [r.routeId,'#'+(j+1),s.siteCode,s.orderReleaseIds.join(', '),s.arrivalTime||''].filter(Boolean).join('\t');}).join('\n');
+}
+$('stop-close').onclick=()=>showStops(null);
+// 非 localhost 的 http 地址没有剪贴板接口，退回为选中文本，由用户按快捷键复制。
+$('stop-copy').onclick=async()=>{
+  const text=$('stop-text').textContent;
+  try{await navigator.clipboard.writeText(text);toast('已复制');}
+  catch{const range=document.createRange();range.selectNodeContents($('stop-text'));getSelection().removeAllRanges();getSelection().addRange(range);toast('已选中，按 Ctrl/⌘+C 复制');}
+};
 new ResizeObserver(()=>{if(data)draw();}).observe($('map'));
 $('zoom-in').onclick=()=>zoomAt([W/2,H/2],1.4);$('zoom-out').onclick=()=>zoomAt([W/2,H/2],1/1.4);$('reset').onclick=()=>{zoom=1;pan=[0,0];draw();};
 
