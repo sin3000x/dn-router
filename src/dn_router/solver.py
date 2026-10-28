@@ -24,6 +24,7 @@ from .problem import (
     InputError,
     Problem,
     Route,
+    gc_paused,
     prepare,
     scaled,
     validate_routes,
@@ -94,8 +95,9 @@ def solve(payload: dict[str, Any], *, time_limit_ms: int = 200) -> Result:
         return {**fields, "elapsedMs": _ms(perf_counter() - started)}
 
     try:
-        request = Request.model_validate(payload)
-        problem = prepare(request)
+        with gc_paused():
+            request = Request.model_validate(payload)
+            problem = prepare(request)
     except (ValidationError, InputError) as error:
         errors = [{"code": "INVALID_INPUT", "message": str(error)}]
         return finish(status="INVALID_INPUT", routes=[], errors=errors)

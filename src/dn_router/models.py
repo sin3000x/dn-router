@@ -1,9 +1,10 @@
-# 输入结构与业务字段校验。所有模型使用 BaseModel 默认行为：忽略额外字段。
+# 输入结构与业务字段校验。所有模型使用 pydantic 默认行为：忽略额外字段。
 from datetime import datetime
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Annotated, Literal, Self
 
 from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic.dataclasses import dataclass
 
 # 使用 Decimal 保留业务数值精度；拒绝 NaN 和无穷大。
 NonNegative = Annotated[Decimal, Field(ge=0, allow_inf_nan=False)]
@@ -56,12 +57,15 @@ class Vehicle(BaseModel):
 
 
 # 有向矩阵边；from 是 Python 关键字，内部通过 origin 访问。
-class Leg(BaseModel):
+# 矩阵约 N² 条，用 slots 数据类代替 BaseModel，校验规则相同但实例构造更快；
+# 同样忽略额外字段。
+@dataclass(slots=True)
+class Leg:
+    origin: str = Field(alias="from")
+    to: str = Field()
+    planDistance: NonNegative = Field()
     beginSiteCode: str | None = None
     endSiteCode: str | None = None
-    origin: str = Field(alias="from")
-    to: str
-    planDistance: NonNegative
     duration: Annotated[int, Field(ge=0)] | None = None
 
 

@@ -6,7 +6,9 @@
 - 时间均为相对最早出仓时刻的整数秒。
 """
 
+import gc
 from collections.abc import Iterable, Iterator, Sequence
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import ROUND_CEILING, Decimal
@@ -54,10 +56,30 @@ class Visit(NamedTuple):
 def scaled(value: Decimal | int, scale: int) -> int:
     """精确转成求解器整数单位，禁止静默舍入改变容量或距离约束。"""
     result = Decimal(value) * scale
-    if result != result.to_integral_value() or abs(result) >= LIMIT:
-        message = f"unsupported numeric precision/range: {value} (scale={scale})"
-        raise InputError(message)
-    return int(result)
+    # 先排除非有限值和超范围，再转 int；比 to_integral_value 比较快，矩阵上调用约 N² 次。
+    if result.is_finite() and abs(result) < LIMIT:
+        integer = int(result)
+        if integer == result:
+            return integer
+    message = f"unsupported numeric precision/range: {value} (scale={scale})"
+    raise InputError(message)
+
+
+@contextmanager
+def gc_paused() -> Iterator[None]:
+    """暂停循环垃圾回收。
+
+    校验和预处理一次性创建约 N² 个矩阵对象且全部存活，分代回收会反复扫描它们
+    而回收不到任何东西；300 DN 时约占这一步耗时的 40%。只恢复进入前的状态，
+    嵌套或并发调用时不会提前打开。
+    """
+    enabled = gc.isenabled()
+    gc.disable()
+    try:
+        yield
+    finally:
+        if enabled:
+            gc.enable()
 
 
 @dataclass
@@ -258,11 +280,13 @@ def _edges(request: Request, warnings: list[str]) -> Edges:
     edges: Edges = {}
     for leg in request.allPathDistanceVoList:
         key = (leg.origin, leg.to)
-        cost = (leg.planDistance, leg.duration)
-        if key in edges and (edges[key].planDistance, edges[key].duration) != cost:
+        known = edges.get(key)
+        if known is not None and (
+            known.planDistance != leg.planDistance or known.duration != leg.duration
+        ):
             raise InputError(f"conflicting matrix entries: {key}")
         edges[key] = leg
-        if leg.origin == leg.to and any(cost):
+        if leg.origin == leg.to and (leg.planDistance or leg.duration):
             warnings.append(f"DIAGONAL_NORMALIZED: {leg.origin}")
     if request.pathDistanceVoList:
         warnings.append(
@@ -314,23 +338,27 @@ def _matrices(
 ) -> tuple[Matrix, Matrix]:
     """构造按节点编号索引的距离（已缩放）和耗时矩阵。"""
     ids = [depot, *(d.orderReleaseId for d in dns)]
+    # 仓库没有 siteCode，用 None 占位，不会与任何 DN 同站。
+    sites = [None, *(d.siteCode for d in dns)]
     distance = [[0] * len(ids) for _ in ids]
     duration = [[0] * len(ids) for _ in ids]
     for i, a in enumerate(ids):
-        for j, b in enumerate(ids):
-            # 开放路线不返仓，因此无需返仓边。
-            if i == j or j == DEPOT:
+        site, distance_row, duration_row = sites[i], distance[i], duration[i]
+        # 开放路线不返仓，因此无需返仓边，j 从 1 开始。
+        for j in range(1, len(ids)):
+            if i == j:
                 continue
+            b = ids[j]
             leg = edges.get((a, b))
             if leg is None or leg.duration is None:
                 raise InputError(f"missing directed matrix leg/duration: {a} -> {b}")
             # 同 siteCode 视为一次物理停靠，内部距离及行驶耗时统一归零。
-            if i != DEPOT and dns[i - 1].siteCode == dns[j - 1].siteCode:
+            if site == sites[j]:
                 if leg.planDistance or leg.duration:
                     warnings.append(f"SAME_SITE_TRAVEL_NORMALIZED: {a} -> {b}")
                 continue
-            distance[i][j] = scaled(leg.planDistance, DIST_SCALE)
-            duration[i][j] = leg.duration
+            distance_row[j] = scaled(leg.planDistance, DIST_SCALE)
+            duration_row[j] = leg.duration
     return distance, duration
 
 
