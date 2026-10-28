@@ -96,8 +96,9 @@ class Request(BaseModel):
     allPathDistanceVoList: list[Leg]
     pathDistanceVoList: list[Leg] = Field(default_factory=list)
     # 卸货单位为小时；出发窗口采用同一业务当地时间。
+    # 缺少 earliestShippingDate 即旧版不考虑时间的请求，见 timed。
     unloadingTime: NonNegative = Decimal(0)
-    earliestShippingDate: datetime
+    earliestShippingDate: datetime | None = None
     latestShippingDate: datetime | None = None
     enableTimeWindows: bool = True
     destCountryCode3: str | None = None
@@ -120,6 +121,11 @@ class Request(BaseModel):
     def count_first(self) -> bool:
         return self.quotationModel in COUNT_FIRST_QUOTATIONS
 
+    @property
+    def timed(self) -> bool:
+        """是否考虑时间；旧版请求不带出仓时间，忽略耗时、时间窗和卸货时长。"""
+        return self.earliestShippingDate is not None
+
     @model_validator(mode="after")
     def _consistency(self) -> Self:
         # DN ID 用于矩阵索引，不能重复或与仓库重名；车型名称也必须唯一。
@@ -135,8 +141,11 @@ class Request(BaseModel):
         dates = [d for d in (self.earliestShippingDate, self.latestShippingDate) if d]
         if not all(map(_is_local_whole_second, dates)):
             raise ValueError("shipping times must be local, whole-second timestamps")
+        if self.latestShippingDate and not self.earliestShippingDate:
+            raise ValueError("latestShippingDate requires earliestShippingDate")
         if (
             self.latestShippingDate
+            and self.earliestShippingDate
             and self.latestShippingDate < self.earliestShippingDate
         ):
             raise ValueError("warehouse departure window is empty")

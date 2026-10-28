@@ -3,7 +3,8 @@
 内部约定：
 - 节点编号 0 为仓库，1..N 对应 Problem.dns 的下标加一；
 - 车型用 Problem.vehicles（已按等级从小到大排序）的下标表示；
-- 时间均为相对最早出仓时刻的整数秒。
+- 时间均为相对最早出仓时刻的整数秒；旧版不考虑时间的请求耗时、卸货均为零，
+  时间窗不限。
 """
 
 import gc
@@ -121,14 +122,17 @@ class Problem:
         warnings: list[str] = []
         edges = _edges(request, warnings)
         dns, bounds, rejected = _eligible_dns(request, edges)
-        distance, duration = _matrices(request.sourceLocation, dns, edges, warnings)
+        distance, duration = _matrices(
+            request.sourceLocation, dns, edges, warnings, timed=request.timed
+        )
         # 以容积、载重、名称确定稳定车型等级，不假定容量互相嵌套。
         vehicles = sorted(
             request.vehicleTypeVoList,
             key=lambda v: (v.totalVolume, v.totalWeight, v.vehicleTypeName),
         )
         # 小时换算成秒后向上取整，避免低估卸货占用时间。
-        unload_seconds = math.ceil(request.unloadingTime * 3600)
+        # 旧版请求不考虑时间，忽略卸货时长。
+        unload_seconds = math.ceil(request.unloadingTime * 3600) if request.timed else 0
 
         latest = request.latestShippingDate
         latest_departure = _seconds(request, latest) if latest else 0
@@ -271,6 +275,7 @@ def validate_routes(problem: Problem, routes: Iterable[Route]) -> None:
 
 
 def _seconds(request: Request, moment: datetime) -> int:
+    assert request.earliestShippingDate is not None
     return int((moment - request.earliestShippingDate).total_seconds())
 
 
@@ -300,6 +305,7 @@ def _eligible_dns(
 ) -> tuple[list[DN], list[Window | None], list[dict[str, str]]]:
     """仅剔除空时间窗、最早出仓直送仍超时的订单；矩阵缺失必须报错。
 
+    旧版不考虑时间的请求忽略时间窗，也不要求 duration。
     返回保留的 DN、对应时间窗（秒，None 表示不限）和被剔除的订单。
     """
     dns: list[DN] = []
@@ -310,18 +316,19 @@ def _eligible_dns(
         rejected.append({"orderReleaseId": dn.orderReleaseId, "code": code})
 
     for dn in request.dnSiteVoList:
-        window = dn.timeWindow if request.enableTimeWindows else None
+        window = dn.timeWindow if request.timed and request.enableTimeWindows else None
         if window == [] or (window and window[0] > window[1]):
             reject(dn, "EMPTY_TIME_WINDOW")
             continue
 
         path = (request.sourceLocation, dn.orderReleaseId)
         edge = edges.get(path)
-        if edge is None or edge.duration is None:
+        if edge is None or (request.timed and edge.duration is None):
             raise InputError(f"missing depot leg/duration: {' -> '.join(path)}")
 
         bound = None
         if window:
+            assert edge.duration is not None
             bound = (_seconds(request, window[0]), _seconds(request, window[1]))
             if edge.duration > bound[1]:
                 reject(dn, "DIRECT_TIME_WINDOW_UNREACHABLE")
@@ -333,9 +340,9 @@ def _eligible_dns(
 
 
 def _matrices(
-    depot: str, dns: list[DN], edges: Edges, warnings: list[str]
+    depot: str, dns: list[DN], edges: Edges, warnings: list[str], *, timed: bool
 ) -> tuple[Matrix, Matrix]:
-    """构造按节点编号索引的距离（已缩放）和耗时矩阵。"""
+    """构造按节点编号索引的距离（已缩放）和耗时矩阵；timed 为假时耗时全为零。"""
     ids = [depot, *(d.orderReleaseId for d in dns)]
     # 仓库没有 siteCode，用 None 占位，不会与任何 DN 同站。
     sites = [None, *(d.siteCode for d in dns)]
@@ -349,15 +356,16 @@ def _matrices(
                 continue
             b = ids[j]
             leg = edges.get((a, b))
-            if leg is None or leg.duration is None:
+            if leg is None or (timed and leg.duration is None):
                 raise InputError(f"missing directed matrix leg/duration: {a} -> {b}")
             # 同 siteCode 视为一次物理停靠，内部距离及行驶耗时统一归零。
             if site == sites[j]:
-                if leg.planDistance or leg.duration:
+                if leg.planDistance or (timed and leg.duration):
                     warnings.append(f"SAME_SITE_TRAVEL_NORMALIZED: {a} -> {b}")
                 continue
             distance_row[j] = scaled(leg.planDistance, DIST_SCALE)
-            duration_row[j] = leg.duration
+            if timed:
+                duration_row[j] = leg.duration
     return distance, duration
 
 

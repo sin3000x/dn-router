@@ -201,6 +201,54 @@ def test_waiting_and_latest_departure():
     assert r["routes"][0]["siteDetails"][0]["eta"] == "2026-10-21 14:00:00"
 
 
+# 旧版请求不带出仓时间、卸货时长、耗时和时间窗，输出也不含时间字段。
+def test_legacy_request_without_time():
+    p = case(3)
+    for field in ("earliestShippingDate", "unloadingTime", "latestShippingDate"):
+        p.pop(field, None)
+    for leg in p["allPathDistanceVoList"]:
+        del leg["duration"]
+    for dn in p["dnSiteVoList"]:
+        del dn["timeWindow"]
+    r = run(p)
+    assert r["vehicleCount"] == 1 and r["totalDistance"] == 12
+    route = r["routes"][0]
+    assert list(route) == ["dist", "siteAddresses", "vehicle", "volume", "weight"]
+
+
+# 旧版请求忽略时间窗，即使给出空窗或不可达窗口也不剔除。
+def test_legacy_request_ignores_time_windows():
+    p = case(2)
+    del p["earliestShippingDate"]
+    p["dnSiteVoList"][0]["timeWindow"] = []
+    p["dnSiteVoList"][1]["timeWindow"] = ["2000-01-01 00:00", "2000-01-01 00:01"]
+    r = run(p)
+    assert r["servedOrderCount"] == 2 and not r["rejectedOrders"]
+    assert "siteDetails" not in r["routes"][0]
+
+
+# 旧版请求不建时间维度，同车同站 DN 仍须连续停靠。
+def test_legacy_request_keeps_same_site_contiguous():
+    p = case(6)
+    del p["earliestShippingDate"]
+    for i, dn in enumerate(p["dnSiteVoList"]):
+        dn["siteCode"] = f"S{i % 2}"
+    route = run(p)["routes"][0]["siteAddresses"]
+    sites = [int(dn[1:]) % 2 for dn in route]
+    assert sites in ([0, 0, 0, 1, 1, 1], [1, 1, 1, 0, 0, 0])
+
+
+# 带出仓时间的请求仍要求耗时；只有出仓上限没有下限时拒绝。
+def test_timed_request_still_requires_duration():
+    p = case(2)
+    del p["allPathDistanceVoList"][0]["duration"]
+    assert solve(p)["status"] == "INVALID_INPUT"
+    p = case(1)
+    del p["earliestShippingDate"]
+    p["latestShippingDate"] = "2026-10-21 11:05"
+    assert solve(p)["status"] == "INVALID_INPUT"
+
+
 # 缺少必需的有向矩阵边时返回输入错误，不能默认距离为零。
 def test_missing_matrix_is_error():
     p = case(2)

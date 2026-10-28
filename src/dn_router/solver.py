@@ -181,26 +181,31 @@ def _remaining_ms(deadline: float) -> float:
 
 
 def _route_output(problem: Problem, route: Route) -> Result:
-    """生成公开路线对象；eta 取最早出仓时间表中的开始卸货时间。"""
-    departure = problem.request.earliestShippingDate
+    """生成公开路线对象；eta 取最早出仓时间表中的开始卸货时间。
 
-    def timestamp(seconds: int) -> str:
-        return (departure + timedelta(seconds=seconds)).isoformat(sep=" ")
-
+    旧版不考虑时间的请求不输出 departure_date 和 siteDetails。
+    """
     dns = [problem.dn(i) for i in route.nodes]
-    visits = problem.schedule(route.nodes)
-    return {
+    output: Result = {
         "dist": problem.length(route.nodes) / DIST_SCALE,
         "siteAddresses": [d.orderReleaseId for d in dns],
-        "departure_date": timestamp(0),
-        "siteDetails": [
+    }
+    departure = problem.request.earliestShippingDate
+    if departure is not None:
+
+        def timestamp(seconds: int) -> str:
+            return (departure + timedelta(seconds=seconds)).isoformat(sep=" ")
+
+        visits = problem.schedule(route.nodes)
+        output["departure_date"] = timestamp(0)
+        output["siteDetails"] = [
             {"siteAddress": d.orderReleaseId, "eta": timestamp(visit.start)}
             for d, visit in zip(dns, visits, strict=True)
-        ],
-        "vehicle": problem.vehicles[route.vehicle].vehicleTypeName,
-        "volume": float(sum(d.totalGrossVolume for d in dns)),
-        "weight": float(sum(d.totalGrossWeight for d in dns)),
-    }
+        ]
+    output["vehicle"] = problem.vehicles[route.vehicle].vehicleTypeName
+    output["volume"] = float(sum(d.totalGrossVolume for d in dns))
+    output["weight"] = float(sum(d.totalGrossWeight for d in dns))
+    return output
 
 
 class _ObjectiveWeights:
@@ -249,7 +254,9 @@ class _RoutingModel:
 
         self._add_cost(weights)
         self._add_capacities()
-        self._add_time()
+        # 旧版请求不考虑时间，不建时间维度。
+        if problem.request.timed:
+            self._add_time()
         self._add_shared_site_blocks()
         self._add_stop_limit()
         self._add_distance_limits()
@@ -396,7 +403,7 @@ class _RoutingModel:
         """同车同站的 DN 必须连续停靠并共用 eta。
 
         用序位维度约束：同车同站任意两单的序位差不超过本车该站 DN 数减一，
-        迫使它们组成连续块；同时令它们的开始卸货时间相等。
+        迫使它们组成连续块；考虑时间时同时令它们的开始卸货时间相等。
         """
         problem, routing, solver = self.problem, self.routing, self.solver
         sites: defaultdict[str, list[int]] = defaultdict(list)
@@ -410,14 +417,14 @@ class _RoutingModel:
         step = routing.RegisterTransitCallback(lambda a, b: 1)
         routing.AddDimension(step, 0, n + 1, True, "Position")
         position = routing.GetDimensionOrDie("Position")
-        time = routing.GetDimensionOrDie("Time")
+        timed = problem.request.timed
         slots = range(len(self.slot_vehicles))
 
         def order(node: int) -> Any:
             return position.CumulVar(self._index(node))
 
         def start(node: int) -> Any:
-            return time.CumulVar(self._index(node))
+            return routing.GetDimensionOrDie("Time").CumulVar(self._index(node))
 
         for group in shared:
             on_slot = [
@@ -432,7 +439,8 @@ class _RoutingModel:
                     solver.Add(
                         order(i) - order(j) <= same_site_count - 1 + n * (1 - same)
                     )
-                    solver.Add(start(i) - start(j) <= problem.horizon * (1 - same))
+                    if timed:
+                        solver.Add(start(i) - start(j) <= problem.horizon * (1 - same))
 
     def _add_stop_limit(self) -> None:
         """每车去重站点数不超过 maxSiteQty。

@@ -57,6 +57,8 @@
 - 不输出物理到达时间。输出采用最早出仓、到站即尽早开工的时间表，不优化等待时长。
 - `unloadingTime` 单位为小时，换算秒后向上取整；`duration` 为整数秒。
 - `enableTimeWindows = false`：忽略所有 DN 时间窗（包括空窗，不剔除），出仓时间与卸货时长仍生效。
+- 旧版请求（缺少 `earliestShippingDate`）完全不考虑时间：耗时与卸货视为零、忽略时间窗（不剔除），
+  不要求矩阵带 `duration`，输出不含 `departure_date` 和 `siteDetails`。
 
 ## 允许剔除的 DN
 

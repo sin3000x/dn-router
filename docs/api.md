@@ -16,14 +16,20 @@ JSON Schema 见 `schemas/request.schema.json`（由 `models.Request` 生成）�
 请求及嵌套对象允许携带额外字段，解析时忽略。日期格式 `YYYY-MM-DD HH:mm` 或 `YYYY-MM-DD HH:mm:ss`，
 均为不带时区的业务当地时间，不允许小数秒。
 
+### 旧版不考虑时间的请求
+
+缺少 `earliestShippingDate` 的请求按旧版处理，不考虑时间：`unloadingTime`、`timeWindow`、
+`enableTimeWindows` 和矩阵 `duration` 均可省略，即使给出也忽略；`latestShippingDate` 不允许出现。
+输出路线不含 `departure_date` 和 `siteDetails`，其余字段与约束（容量、站点数、距离限制等）不变。
+
 ### 顶层字段
 
 | 字段 | 类型 | 必填 | 默认 | 说明 |
 |---|---|---|---|---|
 | `sourceLocation` | string | 是 | | 仓库 ID，即矩阵中仓库的 `from` 键；不能与任何 DN ID 相同 |
 | `sourceLatitude` / `sourceLongitude` | number | 是 | | 仓库坐标，仅用于初解扫描排序和可视化 |
-| `earliestShippingDate` | datetime | 是 | | 最早出仓时间，也是全部时间计算的零点 |
-| `latestShippingDate` | datetime \| null | 否 | null | 最晚出仓时间；不得早于 `earliestShippingDate` |
+| `earliestShippingDate` | datetime \| null | 否 | null | 最早出仓时间，也是全部时间计算的零点。缺省即[旧版不考虑时间的请求](#旧版不考虑时间的请求) |
+| `latestShippingDate` | datetime \| null | 否 | null | 最晚出仓时间；须同时给出 `earliestShippingDate` 且不得早于它 |
 | `unloadingTime` | number ≥ 0 | 否 | 0 | 每次停靠的卸货时长，**单位小时**，换算秒后向上取整 |
 | `enableTimeWindows` | bool | 否 | true | false 时忽略全部 DN 时间窗 |
 | `dnSiteVoList` | DN[] | 是 | | 待配送 DN，可为空列表 |
@@ -62,10 +68,10 @@ JSON Schema 见 `schemas/request.schema.json`（由 `models.Request` 生成）�
 |---|---|---|---|
 | `from` / `to` | string | 是 | 仓库 ID 或 DN 号（`orderReleaseId`），**不是** siteCode |
 | `planDistance` | number ≥ 0 | 是 | 业务距离单位，最多 3 位小数 |
-| `duration` | int ≥ 0 | 求解所需边必填 | 行驶耗时，整数秒 |
+| `duration` | int ≥ 0 | 求解所需边必填（旧版请求可省略） | 行驶耗时，整数秒 |
 | `beginSiteCode` / `endSiteCode` | string | 否 | 附带标签，不作索引 |
 
-必须提供：仓库 → 每个保留 DN、每个保留 DN → 其他保留 DN 的有向边，且带 `duration`。
+必须提供：仓库 → 每个保留 DN、每个保留 DN → 其他保留 DN 的有向边，且带 `duration`（旧版请求不要求）。
 不需要返仓边和对角线。同一 `(from, to)` 重复出现时取值必须完全一致。完整规则见
 [业务规则 · 矩阵](business-rules.md#矩阵)。
 
@@ -79,8 +85,8 @@ JSON Schema 见 `schemas/request.schema.json`（由 `models.Request` 生成）�
 |---|---|---|
 | `dist` | number | 路线总距离：仓库到首站 + 站间，不含返仓；单位同输入 |
 | `siteAddresses` | string[] | 按配送顺序的 **DN 号**（不是 siteCode） |
-| `departure_date` | string | 出仓时间，恒为 `earliestShippingDate` |
-| `siteDetails` | {siteAddress, eta}[] | 每个 DN 一项，顺序同 `siteAddresses`；`eta` 为**开始卸货时间** |
+| `departure_date` | string | 出仓时间，恒为 `earliestShippingDate`；旧版请求不输出 |
+| `siteDetails` | {siteAddress, eta}[] | 每个 DN 一项，顺序同 `siteAddresses`；`eta` 为**开始卸货时间**；旧版请求不输出 |
 | `vehicle` | string | 车型名称（`vehicleTypeName`），取装得下本路线的最小车型 |
 | `volume` / `weight` | number | 本车 DN 的体积、重量之和 |
 

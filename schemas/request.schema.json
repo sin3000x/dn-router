@@ -249,9 +249,17 @@
       "title": "Unloadingtime"
     },
     "earliestShippingDate": {
-      "format": "date-time",
-      "title": "Earliestshippingdate",
-      "type": "string"
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Earliestshippingdate"
     },
     "latestShippingDate": {
       "anyOf": [
@@ -395,7 +403,6 @@
   },
   "required": [
     "allPathDistanceVoList",
-    "earliestShippingDate",
     "dnSiteVoList",
     "sourceLatitude",
     "sourceLongitude",
