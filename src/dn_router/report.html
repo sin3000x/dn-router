@@ -355,7 +355,7 @@ function details(){
   visible().forEach(({r,i})=>{
     const box=el('article',null,root,'route-detail');box.style.setProperty('--c',color(i));
     const h=el('div',null,box,'rd-head');el('span',null,h,'dot');el('h3',r.routeId+' · '+r.vehicleTypeName,h);
-    el('div','出仓 '+r.departureTime+' → 完成 '+r.completionTime+'　距离 '+fmt(r.totalDistance)+'　站点计数 '+fmt(r.siteCount)+'　实际停靠 '+fmt(r.physicalStopCount),box,'rd-meta');
+    el('div',(r.departureTime?'出仓 '+r.departureTime+' → 完成 '+r.completionTime+'　':'')+'距离 '+fmt(r.totalDistance)+'　站点计数 '+fmt(r.siteCount)+'　实际停靠 '+fmt(r.physicalStopCount),box,'rd-meta');
     const ld=el('div',null,box,'loads');
     for(const l of loads(r)){const d=el('div',null,ld),row=el('div',null,d,'load-row');el('span',l.label,row);el('b',fmt(l.used)+' / '+fmt(l.cap)+(l.ratio==null?'':'　'+fmt(l.ratio*100,1)+'%'),row);if(l.ratio!=null)el('i',null,el('div',null,d,'meter')).style.width=Math.min(100,l.ratio*100)+'%';}
     const table=el('table',null,el('div',null,box,'table-scroll')),head=el('tr',null,el('thead',null,table));

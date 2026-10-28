@@ -89,8 +89,9 @@ def _display_routes(payload: Json, routes: list[Json]) -> list[Json]:
     """仅在报告内部把逐 DN 输出合并为实际停靠，保持公开结果对象不变。
 
     eta 是开始卸货时间；等待由权威矩阵耗时反推，同站只计一次卸货。
+    旧版不考虑时间的请求没有 siteDetails，只按 siteAddresses 合并停靠，不带时间。
     """
-    if not any("siteDetails" in route for route in routes):
+    if not any("siteAddresses" in route for route in routes):
         return routes
     with gc_paused():
         request = Request.model_validate(payload)
@@ -98,8 +99,11 @@ def _display_routes(payload: Json, routes: list[Json]) -> list[Json]:
     orders = {dn.orderReleaseId: (node, dn) for node, dn in enumerate(problem.dns, 1)}
     converted = []
     for number, route in enumerate(routes, 1):
-        if "siteDetails" not in route:
+        if "siteAddresses" not in route:
             converted.append(route)
+            continue
+        if "siteDetails" not in route:
+            converted.append(_untimed_route(problem, orders, number, route))
             continue
         previous_time = datetime.fromisoformat(route["departure_date"])
         previous_node = 0
@@ -150,6 +154,33 @@ def _display_routes(payload: Json, routes: list[Json]) -> list[Json]:
             }
         )
     return converted
+
+
+def _untimed_route(
+    problem: Problem, orders: dict[str, tuple[int, Any]], number: int, route: Json
+) -> Json:
+    """旧版无时间路线：相邻同站 DN 合并为一次停靠，时间字段留空。"""
+    stops: list[Json] = []
+    for order in route["siteAddresses"]:
+        dn = orders[order][1]
+        if stops and stops[-1]["siteCode"] == dn.siteCode:
+            stops[-1]["orderReleaseIds"].append(dn.orderReleaseId)
+        else:
+            stops.append({"siteCode": dn.siteCode, "orderReleaseIds": [order]})
+    return {
+        "routeId": f"R{number}",
+        "vehicleTypeName": route["vehicle"],
+        "departureTime": None,
+        "completionTime": None,
+        "totalDistance": route["dist"],
+        "totalVolume": route["volume"],
+        "totalWeight": route["weight"],
+        "stops": stops,
+        "physicalStopCount": len(stops),
+        "siteCount": problem.distinct_stops(
+            orders[order][0] for order in route["siteAddresses"]
+        ),
+    }
 
 
 def _coordinate(lat: Any, lon: Any) -> Coordinate | None:

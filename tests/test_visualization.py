@@ -260,3 +260,24 @@ def test_server_rejects_paths_outside_root_and_reports_bad_uploads(served):
     assert fetch(served + "/api/solve?file=missing.json")[0] == 400
     status, body = fetch(served + "/api/solve", b"{not json")
     assert status == 200 and json.loads(body)["result"]["status"] == "INVALID_INPUT"
+
+
+# 旧版无时间请求也要按 siteAddresses 展示停靠，不能因缺少 siteDetails 显示 0 DN。
+def test_legacy_routes_without_time_still_show_stops():
+    from pathlib import Path
+
+    from dn_router.cli import solve_text
+
+    payload = json.loads(
+        (Path(__file__).resolve().parents[1] / "examples/input-multi.json").read_text()
+    )
+    for field in ("earliestShippingDate", "unloadingTime", "latestShippingDate"):
+        payload.pop(field, None)
+    payload, result = solve_text(json.dumps(payload), 300)
+    data = report_data(payload, result)
+    routes = data["result"]["routes"]
+    assert [dn for r in routes for s in r["stops"] for dn in s["orderReleaseIds"]] == [
+        dn for r in result["routes"] for dn in r["siteAddresses"]
+    ]
+    assert all(r["departureTime"] is None for r in routes)
+    assert data["timeline"] is None
