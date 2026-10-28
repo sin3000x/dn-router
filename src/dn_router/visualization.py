@@ -8,7 +8,7 @@ from collections.abc import Callable, Mapping
 from typing import Any
 
 from .models import Request
-from .problem import Problem, gc_paused
+from .problem import DIST_SCALE, Problem, gc_paused
 
 Json = dict[str, Any]
 Coordinate = list[float]
@@ -132,6 +132,7 @@ def _display_routes(payload: Json, routes: list[Json]) -> list[Json]:
                         "departureTime": departure.isoformat(sep=" "),
                         "waitingBeforeArrivalSeconds": wait,
                         "unloadingSeconds": problem.unload_seconds,
+                        **_leg(problem, previous_node, node, timed=True),
                     }
                 )
                 previous_time = departure
@@ -156,17 +157,33 @@ def _display_routes(payload: Json, routes: list[Json]) -> list[Json]:
     return converted
 
 
+def _leg(problem: Problem, origin: int, node: int, *, timed: bool) -> Json:
+    """上一停靠到本停靠的距离与耗时，取求解实际使用的归一化矩阵；旧版请求不计耗时。"""
+    return {
+        "legDistance": Decimal(problem.distance[origin][node]) / DIST_SCALE,
+        "legDurationSeconds": problem.duration[origin][node] if timed else None,
+    }
+
+
 def _untimed_route(
     problem: Problem, orders: dict[str, tuple[int, Any]], number: int, route: Json
 ) -> Json:
     """旧版无时间路线：相邻同站 DN 合并为一次停靠，时间字段留空。"""
     stops: list[Json] = []
+    previous_node = 0
     for order in route["siteAddresses"]:
-        dn = orders[order][1]
+        node, dn = orders[order]
         if stops and stops[-1]["siteCode"] == dn.siteCode:
             stops[-1]["orderReleaseIds"].append(dn.orderReleaseId)
         else:
-            stops.append({"siteCode": dn.siteCode, "orderReleaseIds": [order]})
+            stops.append(
+                {
+                    "siteCode": dn.siteCode,
+                    "orderReleaseIds": [order],
+                    **_leg(problem, previous_node, node, timed=False),
+                }
+            )
+        previous_node = node
     return {
         "routeId": f"R{number}",
         "vehicleTypeName": route["vehicle"],
@@ -225,6 +242,24 @@ _REQUEST_FIELDS = (
 )
 
 
+def _raw_matrix(payload: Json, ids: list[str], legs: list[Json]) -> Json:
+    """按输入原样整理距离与耗时矩阵，行列为仓库加全部 DN；缺失的边为 null。
+
+    不做归一化，也不依赖请求校验通过，便于排查缺边或取值错误。
+    """
+    source = payload.get("sourceLocation")
+    points = [source if isinstance(source, str) else None, *ids]
+    index = {point: i for i, point in enumerate(points) if point is not None}
+    distance: list[list[Any]] = [[None] * len(points) for _ in points]
+    duration: list[list[Any]] = [[None] * len(points) for _ in points]
+    for leg in legs:
+        a, b = index.get(leg.get("from")), index.get(leg.get("to"))
+        if a is not None and b is not None:
+            distance[a][b] = leg.get("planDistance")
+            duration[a][b] = leg.get("duration")
+    return {"ids": points, "distance": distance, "duration": duration}
+
+
 def _request_summary(payload: Json, records: Callable[[str], list[Json]]) -> Json:
     """回显请求的关键参数和规模，帮助核对求解口径。"""
     return {
@@ -246,7 +281,7 @@ def report_data(payload: Json, result: Mapping[str, Any]) -> Json:
 
     Returns:
         包含 result（路线已改为按实际停靠展示）、depot、vehicles、request（关键入参）、
-        orders（逐 DN 明细）、timeline 的字典。
+        orders（逐 DN 明细）、matrix（原始距离矩阵）、timeline 的字典。
 
     Raises:
         ValueError: 结果含路线但请求无法重新校验，或路线时间与权威矩阵不一致。
@@ -300,6 +335,7 @@ def report_data(payload: Json, result: Mapping[str, Any]) -> Json:
         },
         "vehicles": records("vehicleTypeVoList"),
         "request": _request_summary(payload, records),
+        "matrix": _raw_matrix(payload, list(orders), records("allPathDistanceVoList")),
         # 停靠明细逐 DN 展示体积、重量和时间窗，只取页面用到的字段。
         "orders": {
             dn: {k: order.get(k) for k in _ORDER_FIELDS} for dn, order in orders.items()

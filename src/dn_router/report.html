@@ -78,7 +78,12 @@ details.card{margin-bottom:16px}details.card>summary{cursor:pointer;list-style:n
 .loads{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px 24px;margin-bottom:12px;max-width:640px}.load-row{display:flex;justify-content:space-between;font-size:13px;color:var(--muted);margin-bottom:6px}.load-row b{color:var(--text);font-weight:500;font-variant-numeric:tabular-nums}.loads .meter{height:6px}
 .table-scroll{overflow:auto;border:1px solid var(--line);border-radius:8px}
 table{width:100%;border-collapse:collapse;font-size:14px;white-space:nowrap}th,td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--line)}tr:last-child td{border-bottom:0}th{font-size:13px;font-weight:500;color:var(--muted);background:var(--surface-2)}
-td .sub{font-size:13px;color:var(--muted)}td .dn{font-size:13px;color:var(--muted)}td .dn b{font-weight:500;color:var(--text)}tr.active td{background:var(--accent-soft)}.seq{display:inline-grid;place-items:center;width:20px;height:20px;border-radius:50%;background:var(--c);color:#fff;font-size:12px;font-weight:600}
+td .sub{font-size:13px;color:var(--muted)}td .dn{font-size:13px;color:var(--muted)}td .dn b{font-weight:500;color:var(--text)}tr.active td{background:var(--accent-soft)}
+/* 距离矩阵：行 from、列 to，表头与首列吸附，路线经过的边高亮。 */
+.matrix-tools{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px}.matrix-tools input{flex:1;min-width:200px;max-width:360px}
+.matrix-scroll{overflow:auto;max-height:600px;border:1px solid var(--line);border-radius:8px}
+table.matrix th,table.matrix td{padding:6px 10px;text-align:right;border-right:1px solid var(--line)}table.matrix thead th{position:sticky;top:0;z-index:1;vertical-align:bottom}table.matrix tbody th{position:sticky;left:0;z-index:1;background:var(--surface-2);text-align:left}table.matrix thead th:first-child{left:0;z-index:2;text-align:left}
+table.matrix th .sub{font-weight:400;font-size:12px;color:var(--faint)}table.matrix td.on-route{background:var(--accent-soft);color:var(--accent);font-weight:600}table.matrix td.miss{color:var(--bad)}table.matrix td.diag{color:var(--faint)}.seq{display:inline-grid;place-items:center;width:20px;height:20px;border-radius:50%;background:var(--c);color:#fff;font-size:12px;font-weight:600}
 
 .notices{display:flex;flex-direction:column;gap:10px;margin-top:16px}.notice{padding:12px 16px;border-radius:10px;font-size:14px;background:var(--surface-2);overflow-wrap:anywhere}.notice strong{display:block;margin-bottom:4px}.notice.bad{background:var(--bad-soft)}.notice.bad strong{color:var(--bad)}.notice.warn{background:var(--warn-soft)}.notice.warn strong{color:var(--warn)}.notice div{white-space:pre-wrap}
 footer{margin-top:20px;font-size:13px;color:var(--faint);display:flex;gap:16px;flex-wrap:wrap}
@@ -146,6 +151,9 @@ dialog textarea{display:block;width:100%;height:50vh;border:0;border-top:1px sol
 </div></section>
 
 <section class="card details" style="margin-top:16px"><div class="card-head"><h2>停靠与装载明细</h2></div><div id="details"></div></section>
+<details class="card" id="matrix-card" style="margin-top:16px"><summary class="card-head"><div><h2>距离矩阵</h2><div class="sub">原始输入 · 行为 from，列为 to · 高亮为路线经过的边</div></div></summary><div class="card-body">
+<div class="matrix-tools"><input id="matrix-filter" class="field" type="search" placeholder="筛选 DN 或 siteCode" aria-label="筛选 DN 或 siteCode"><select id="matrix-metric" class="field" aria-label="矩阵数值"><option value="distance">距离</option><option value="duration">耗时（分钟）</option></select><span class="small muted" id="matrix-note"></span></div>
+<div class="matrix-scroll"><table class="matrix num" id="matrix"></table></div></div></details>
 <section class="notices" id="notices"></section>
 <footer id="footer"></footer>
 </div>
@@ -245,7 +253,7 @@ function routeList(){
 
 // 路线筛选同时驱动地图、甘特图和明细，不改变全局播放时刻。
 function visible(){return routes.map((r,i)=>({r,i})).filter(x=>selected<0||x.i===selected);}
-function select(i){selected=i;zoom=1;pan=[0,0];showStops(null);[...$('routes').children].forEach((b,j)=>b.setAttribute('aria-pressed',String(j===i+1)));drawGantt();details();updateTime();draw();}
+function select(i){selected=i;zoom=1;pan=[0,0];showStops(null);[...$('routes').children].forEach((b,j)=>b.setAttribute('aria-pressed',String(j===i+1)));drawGantt();details();matrix();updateTime();draw();}
 
 // 按可见坐标拟合视图，用纬度余弦修正经度比例；缩放在投影后应用，标记尺寸保持不变。
 function draw(){
@@ -407,14 +415,42 @@ function details(){
     const ld=el('div',null,box,'loads');
     for(const l of loads(r)){const d=el('div',null,ld),row=el('div',null,d,'load-row');el('span',l.label,row);el('b',fmt(l.used)+' / '+fmt(l.cap)+(l.ratio==null?'':'　'+fmt(l.ratio*100,1)+'%'),row);if(l.ratio!=null)el('i',null,el('div',null,d,'meter')).style.width=Math.min(100,l.ratio*100)+'%';}
     const table=el('table',null,el('div',null,box,'table-scroll')),head=el('tr',null,el('thead',null,table));
-    ['#','站点 / DN','开始卸货（eta）','离开','等待','卸货'].forEach(s=>el('th',s,head));
+    ['#','站点 / DN','距上站','行驶','开始卸货（eta）','离开','等待','卸货'].forEach(s=>el('th',s,head));
     const body=el('tbody',null,table);
     r.stops.forEach((s,j)=>{const tr=el('tr',null,body);tr.dataset.route=i;tr.dataset.stop=j;el('span',j+1,el('td',null,tr),'seq');
       const td=el('td',null,tr);el('b',s.siteCode,td);el('span','　'+s.orderReleaseIds.length+' DN',td,'small muted');
-      for(const id of s.orderReleaseIds){const o=data.orders?.[id]||{},w=o.timeWindow,line=el('div',null,td,'dn');el('b',id,line);line.append('　体积 '+fmt(o.totalGrossVolume)+' · 重量 '+fmt(o.totalGrossWeight)+(Array.isArray(w)?' · 窗口 '+(w.length?w.join(' → '):'空'):''));}el('td',s.arrivalTime,tr,'num');el('td',s.departureTime,tr,'num');
+      for(const id of s.orderReleaseIds){const o=data.orders?.[id]||{},w=o.timeWindow,line=el('div',null,td,'dn');el('b',id,line);line.append('　体积 '+fmt(o.totalGrossVolume)+' · 重量 '+fmt(o.totalGrossWeight)+(Array.isArray(w)?' · 窗口 '+(w.length?w.join(' → '):'空'):''));}
+      el('td',fmt(s.legDistance),tr,'num');el('td',s.legDurationSeconds==null?'—':fmt(s.legDurationSeconds/60,1)+' 分',tr,'num');el('td',s.arrivalTime,tr,'num');el('td',s.departureTime,tr,'num');
       el('td',fmt(s.waitingBeforeArrivalSeconds/60,1)+' 分',tr,'num');el('td',fmt(s.unloadingSeconds/60,1)+' 分',tr,'num');});
   });
 }
+
+// 矩阵按当前筛选的路线排序：仓库、路线上的 DN 依次排列，使经过的边落在对角线上方；
+// 看全部路线时未出线的 DN 排在最后。点数多时只渲染前 MATRIX_LIMIT 个，避免页面卡顿。
+const MATRIX_LIMIT=60;
+function matrix(){
+  const table=$('matrix');table.replaceChildren();
+  const m=data.matrix;if(!m||!$('matrix-card').open)return;
+  const index=new Map(m.ids.map((id,k)=>[id,k])),depot=m.ids[0],seen=new Set([depot]),order=[depot],edges=new Set();
+  for(const {r}of visible()){let prev=depot;for(const s of r.stops)for(const id of s.orderReleaseIds){edges.add(prev+'\u0000'+id);prev=id;if(!seen.has(id)){seen.add(id);order.push(id);}}}
+  if(selected<0)for(const id of m.ids.slice(1))if(!seen.has(id)){seen.add(id);order.push(id);}
+  const site=id=>id===depot?'仓库':data.orders?.[id]?.siteCode??'';
+  const q=$('matrix-filter').value.trim().toLowerCase();
+  const matched=order.filter(id=>id!=null&&index.has(id)&&(id===depot||!q||id.toLowerCase().includes(q)||site(id).toLowerCase().includes(q)));
+  const points=matched.slice(0,MATRIX_LIMIT);
+  $('matrix-note').textContent=(matched.length>points.length?'共 '+matched.length+' 个点，仅显示前 '+MATRIX_LIMIT+' 个，可输入筛选':matched.length+' 个点')+(depot==null?' · 仓库 ID 缺失':'');
+  const byDuration=$('matrix-metric').value==='duration',values=byDuration?m.duration:m.distance;
+  const head=el('tr',null,el('thead',null,table));el('th','from \\ to',head);
+  const label=(cell,id)=>{el('div',id,cell);el('div',site(id),cell,'sub');};
+  for(const id of points)label(el('th',null,head),id);
+  const body=el('tbody',null,table);
+  for(const a of points){const tr=el('tr',null,body);label(el('th',null,tr),a);const row=values[index.get(a)];
+    for(const b of points){const v=row[index.get(b)],td=el('td',null,tr);
+      if(a===b){td.textContent='—';td.className='diag';continue;}
+      if(v==null){td.textContent='缺';td.className='miss';td.title=a+' → '+b+' 矩阵中缺失';continue;}
+      td.textContent=byDuration?fmt(v/60,1):fmt(v);td.title=a+' → '+b;if(edges.has(a+'\u0000'+b))td.className='on-route';}}
+}
+$('matrix-card').ontoggle=matrix;$('matrix-filter').oninput=matrix;$('matrix-metric').onchange=matrix;
 
 // 错误、异常单和告警分别展示，即使没有路线也能查看失败原因。
 function notices(){

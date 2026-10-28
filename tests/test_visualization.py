@@ -242,6 +242,30 @@ def test_public_route_contract_keeps_eta_and_counts_shared_unloading_once():
     segments = data["timeline"]["routes"][0]["segments"]
     assert sum(s["end"] - s["start"] for s in segments if s["kind"] == "unload") == 3600
     assert sum(s["end"] - s["start"] for s in segments if s["kind"] == "travel") == 1200
+    # 每次停靠带上一停靠过来的距离与耗时，取求解使用的矩阵。
+    assert [(s["legDistance"], s["legDurationSeconds"]) for s in route["stops"]] == [
+        (100, 600),
+        (10, 600),
+    ]
+    matrix = data["matrix"]
+    assert matrix["ids"] == ["PA_CROSSDO", first, second, third]
+    assert matrix["distance"][0][3] == 100 and matrix["duration"][3][0] == 600
+
+
+# 原始矩阵不依赖请求校验：缺失的边保留为 null，未知端点忽略。
+def test_raw_matrix_keeps_missing_legs_as_null():
+    payload = {
+        "sourceLocation": "WH",
+        "dnSiteVoList": [{"orderReleaseId": "A"}, {"orderReleaseId": "B"}],
+        "allPathDistanceVoList": [
+            {"from": "WH", "to": "A", "planDistance": Decimal("1.5"), "duration": 60},
+            {"from": "A", "to": "X", "planDistance": 9},
+        ],
+    }
+    matrix = report_data(payload, {"status": "INVALID_INPUT", "routes": []})["matrix"]
+    assert matrix["ids"] == ["WH", "A", "B"]
+    assert matrix["distance"] == [[None, 1.5, None], [None] * 3, [None] * 3]
+    assert matrix["duration"][0][1] == 60
 
 
 # 在线服务：返回页面；可列出并求解目录内文件、接收上传，拒绝越界路径。
@@ -314,4 +338,5 @@ def test_legacy_routes_without_time_still_show_stops():
         dn for r in result["routes"] for dn in r["siteAddresses"]
     ]
     assert all(r["departureTime"] is None for r in routes)
+    assert all(s["legDurationSeconds"] is None for r in routes for s in r["stops"])
     assert data["timeline"] is None
