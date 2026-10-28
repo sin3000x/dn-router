@@ -356,16 +356,16 @@ def _matrices(
                 continue
             b = ids[j]
             leg = edges.get((a, b))
-            if leg is None or (timed and leg.duration is None):
+            seconds = leg.duration if leg and timed else 0
+            if leg is None or seconds is None:
                 raise InputError(f"missing directed matrix leg/duration: {a} -> {b}")
             # 同 siteCode 视为一次物理停靠，内部距离及行驶耗时统一归零。
             if site == sites[j]:
-                if leg.planDistance or (timed and leg.duration):
+                if leg.planDistance or seconds:
                     warnings.append(f"SAME_SITE_TRAVEL_NORMALIZED: {a} -> {b}")
                 continue
             distance_row[j] = scaled(leg.planDistance, DIST_SCALE)
-            if timed:
-                duration_row[j] = leg.duration
+            duration_row[j] = seconds
     return distance, duration
 
 

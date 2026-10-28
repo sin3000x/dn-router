@@ -6,10 +6,20 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
-from .solver import solve
+from .solver import Result, solve
 from .visualization import write_html
 
 FAILURE_STATUSES = frozenset({"INVALID_INPUT", "INFEASIBLE_INPUT"})
+
+
+def _invalid_input(error: Exception) -> Result:
+    """读取或解析失败时的结果，结构与 solve() 的 INVALID_INPUT 一致。"""
+    return {
+        "status": "INVALID_INPUT",
+        "routes": [],
+        "errors": [{"code": "INVALID_INPUT", "message": str(error)}],
+        "elapsedMs": 0.0,
+    }
 
 
 def _positive_int(text: str) -> int:
@@ -38,7 +48,7 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
-def solve_text(raw: str, time_limit_ms: int) -> tuple[Any, dict[str, Any]]:
+def solve_text(raw: str, time_limit_ms: int) -> tuple[Any, Result]:
     """解析 JSON 文本并求解；解析失败时返回 INVALID_INPUT 结果而不是抛错。
 
     Args:
@@ -53,12 +63,7 @@ def solve_text(raw: str, time_limit_ms: int) -> tuple[Any, dict[str, Any]]:
         # JSON 小数直接解析为 Decimal，避免先转浮点造成精度损失。
         payload = json.loads(raw, parse_float=Decimal)
     except ValueError as error:
-        result = {
-            "status": "INVALID_INPUT",
-            "errors": [{"message": str(error)}],
-            "routes": [],
-        }
-        return {}, result
+        return {}, _invalid_input(error)
     # 只捕获解析错误；求解内部异常不能伪装成输入无效。
     return payload, solve(payload, time_limit_ms=time_limit_ms)
 
@@ -98,11 +103,7 @@ def main(argv: list[str] | None = None) -> int:
         )
     except (ValueError, OSError) as error:
         payload: Any = {}
-        result = {
-            "status": "INVALID_INPUT",
-            "errors": [{"message": str(error)}],
-            "routes": [],
-        }
+        result = _invalid_input(error)
     else:
         payload, result = solve_text(raw, args.time_limit_ms)
 

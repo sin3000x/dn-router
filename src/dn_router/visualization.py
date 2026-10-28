@@ -5,6 +5,7 @@ import math
 from datetime import datetime, timedelta
 from decimal import Decimal
 from importlib.resources import files
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
@@ -179,7 +180,7 @@ def _finite(value: Any) -> Any:
     return value
 
 
-def report_data(payload: Json, result: Json) -> Json:
+def report_data(payload: Json, result: Mapping[str, Any]) -> Json:
     """组装页面所需的路线、坐标、车型与时间轴数据，结果可直接严格 JSON 序列化。
 
     Args:
@@ -265,7 +266,7 @@ def render_page(data: Json | None) -> str:
     return _TEMPLATE.read_text(encoding="utf-8").replace("__REPORT_DATA__", encoded)
 
 
-def render_html(payload: Json, result: Json) -> str:
+def render_html(payload: Json, result: Mapping[str, Any]) -> str:
     """直接嵌入数据与前端资源，生成无需联网的报告。
 
     Args:
@@ -281,7 +282,7 @@ def render_html(payload: Json, result: Json) -> str:
     return render_page(report_data(payload, result))
 
 
-def write_html(payload: Json, result: Json, path: str | Path) -> None:
+def write_html(payload: Json, result: Mapping[str, Any], path: str | Path) -> None:
     """以 UTF-8 保存完整离线报告，页面无需额外资源文件。
 
     Args:

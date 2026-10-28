@@ -9,7 +9,7 @@ from collections import defaultdict
 from collections.abc import Callable, Iterable
 from datetime import timedelta
 from time import perf_counter
-from typing import Any, NamedTuple
+from typing import Any, Literal, NamedTuple, NotRequired, TypedDict, Unpack
 
 from ortools.constraint_solver import pywrapcp, routing_enums_pb2
 from pydantic import ValidationError
@@ -30,7 +30,81 @@ from .problem import (
 )
 from .reduce import reduce_routes
 
-Result = dict[str, Any]
+Status = Literal[
+    "FEASIBLE",
+    "NO_ELIGIBLE_ORDERS",
+    "INVALID_INPUT",
+    "INFEASIBLE_INPUT",
+    "SOLVER_ERROR",
+]
+
+
+class SiteDetail(TypedDict):
+    siteAddress: str
+    eta: str
+
+
+class RouteOutput(TypedDict):
+    """公开路线对象；旧版不考虑时间的请求不含 departure_date 和 siteDetails。"""
+
+    dist: float
+    siteAddresses: list[str]
+    departure_date: NotRequired[str]
+    siteDetails: NotRequired[list[SiteDetail]]
+    vehicle: str
+    volume: float
+    weight: float
+
+
+class ErrorItem(TypedDict):
+    code: str
+    message: NotRequired[str]
+    orderReleaseId: NotRequired[str]
+
+
+class Timings(TypedDict):
+    buildAndSeed: float
+    search: float
+
+
+class _Context(TypedDict):
+    """输入校验通过后才有的字段。"""
+
+    taskNo: str
+    rejectedOrders: list[dict[str, str]]
+    warnings: list[str]
+
+
+class _Fields(TypedDict):
+    """除 elapsedMs 外的结果字段；统计字段仅在 FEASIBLE/NO_ELIGIBLE_ORDERS 时出现。"""
+
+    taskNo: NotRequired[str]
+    rejectedOrders: NotRequired[list[dict[str, str]]]
+    warnings: NotRequired[list[str]]
+    status: Status
+    solutionSource: NotRequired[
+        Literal["direct_fallback", "insertion_fallback", "ortools"]
+    ]
+    routes: list[RouteOutput]
+    errors: NotRequired[list[ErrorItem]]
+    vehicleCount: NotRequired[int]
+    servedOrderCount: NotRequired[int]
+    totalDistance: NotRequired[float]
+    objectivePolicy: NotRequired[Literal["vehicles_distance_type", "distance_type"]]
+    optimalityProven: NotRequired[bool]
+    solverStatus: NotRequired[int | None]
+    timingsMs: NotRequired[Timings]
+
+
+class Result(_Fields):
+    """solve() 的公开结果对象，字段说明见 docs/api.md。"""
+
+    elapsedMs: float
+
+
+class _Schedule(TypedDict, total=False):
+    departure_date: str
+    siteDetails: list[SiteDetail]
 
 
 class Stage(NamedTuple):
@@ -90,7 +164,7 @@ def solve(payload: dict[str, Any], *, time_limit_ms: int = 200) -> Result:
     budget = time_limit_ms / 1000
     deadline = started + budget
 
-    def finish(**fields: Any) -> Result:
+    def finish(**fields: Unpack[_Fields]) -> Result:
         return {**fields, "elapsedMs": _ms(perf_counter() - started)}
 
     try:
@@ -98,10 +172,10 @@ def solve(payload: dict[str, Any], *, time_limit_ms: int = 200) -> Result:
             request = Request.model_validate(payload)
             problem = Problem.from_request(request)
     except (ValidationError, InputError) as error:
-        errors = [{"code": "INVALID_INPUT", "message": str(error)}]
+        errors: list[ErrorItem] = [{"code": "INVALID_INPUT", "message": str(error)}]
         return finish(status="INVALID_INPUT", routes=[], errors=errors)
 
-    base: Result = {
+    base: _Context = {
         "taskNo": request.taskNo,
         "rejectedOrders": problem.rejected,
         "warnings": problem.warnings,
@@ -109,7 +183,7 @@ def solve(payload: dict[str, Any], *, time_limit_ms: int = 200) -> Result:
     nodes = range(1, len(problem.dns) + 1)
 
     # 任一有效 DN 超出全部车型容量时整批不可行，不能通过丢弃该单生成路线。
-    oversized = [
+    oversized: list[ErrorItem] = [
         {
             "code": "DN_EXCEEDS_ALL_VEHICLES",
             "orderReleaseId": problem.dn(i).orderReleaseId,
@@ -180,32 +254,39 @@ def _remaining_ms(deadline: float) -> float:
     return (deadline - perf_counter()) * 1000
 
 
-def _route_output(problem: Problem, route: Route) -> Result:
-    """生成公开路线对象；eta 取最早出仓时间表中的开始卸货时间。
-
-    旧版不考虑时间的请求不输出 departure_date 和 siteDetails。
-    """
+def _route_output(problem: Problem, route: Route) -> RouteOutput:
+    """生成公开路线对象。"""
     dns = [problem.dn(i) for i in route.nodes]
-    output: Result = {
+    return {
         "dist": problem.length(route.nodes) / DIST_SCALE,
         "siteAddresses": [d.orderReleaseId for d in dns],
+        **_schedule_output(problem, route.nodes),
+        "vehicle": problem.vehicles[route.vehicle].vehicleTypeName,
+        "volume": float(sum(d.totalGrossVolume for d in dns)),
+        "weight": float(sum(d.totalGrossWeight for d in dns)),
     }
+
+
+def _schedule_output(problem: Problem, nodes: list[int]) -> _Schedule:
+    """出仓时间和逐单 eta，eta 取最早出仓时间表中的开始卸货时间。
+
+    旧版不考虑时间的请求返回空字典。
+    """
     departure = problem.request.earliestShippingDate
-    if departure is not None:
+    if departure is None:
+        return {}
 
-        def timestamp(seconds: int) -> str:
-            return (departure + timedelta(seconds=seconds)).isoformat(sep=" ")
+    def timestamp(seconds: int) -> str:
+        return (departure + timedelta(seconds=seconds)).isoformat(sep=" ")
 
-        visits = problem.schedule(route.nodes)
-        output["departure_date"] = timestamp(0)
-        output["siteDetails"] = [
-            {"siteAddress": d.orderReleaseId, "eta": timestamp(visit.start)}
-            for d, visit in zip(dns, visits, strict=True)
-        ]
-    output["vehicle"] = problem.vehicles[route.vehicle].vehicleTypeName
-    output["volume"] = float(sum(d.totalGrossVolume for d in dns))
-    output["weight"] = float(sum(d.totalGrossWeight for d in dns))
-    return output
+    visits = problem.schedule(nodes)
+    return {
+        "departure_date": timestamp(0),
+        "siteDetails": [
+            {"siteAddress": problem.dn(i).orderReleaseId, "eta": timestamp(v.start)}
+            for i, v in zip(nodes, visits, strict=True)
+        ],
+    }
 
 
 class _ObjectiveWeights:

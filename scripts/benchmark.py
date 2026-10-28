@@ -82,11 +82,11 @@ def summarize(
     for payload in payloads:
         result = solve(payload, time_limit_ms=budget)
         assert (
-            result["status"] == "FEASIBLE" and result["servedOrderCount"] == args.dn
+            result["status"] == "FEASIBLE" and result.get("servedOrderCount") == args.dn
         ), result
         records.append(
             {
-                key: result[key]
+                key: result.get(key)
                 for key in (
                     "elapsedMs",
                     "vehicleCount",

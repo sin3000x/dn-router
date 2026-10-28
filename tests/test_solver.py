@@ -1,4 +1,6 @@
 # 业务回归测试：用小样本固定输入、输出及边界规则。
+# pyright: reportTypedDictNotRequiredAccess=false
+# 直接断言具体输出；缺少字段时测试本身会失败。
 import copy
 import json
 from pathlib import Path
