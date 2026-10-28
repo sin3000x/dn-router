@@ -9,6 +9,15 @@
     "allow_concurrent_runs": false
   },
   {
+    "label": "DN Router：运行当前 JSON 并写结果",
+    "command": "mkdir -p .zed/output && out=\".zed/output/$ZED_STEM.result.json\" && .venv/bin/python -m dn_router \"$ZED_FILE\" --time-limit-ms 1000 --report --output \"$out\"; code=$?; echo \"结果已写入 $out\"; exit $code",
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "reveal": "always",
+    "hide": "never",
+    "save": "all",
+    "allow_concurrent_runs": false
+  },
+  {
     "label": "DN Router：运行全部测试",
     "command": ".venv/bin/python -m pytest -q",
     "cwd": "$ZED_WORKTREE_ROOT",
