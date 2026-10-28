@@ -9,7 +9,6 @@ from fractions import Fraction
 from math import ceil
 from time import perf_counter
 
-from .models import group_key
 from .problem import InputError, Problem, Route
 
 # 每轮只尝试拆最短的几条路线；连续失败过多说明下界很可能不可达，及时放弃。
@@ -60,7 +59,7 @@ def vehicle_lower_bound(problem: Problem) -> int:
     ]
     if limit := problem.request.maxSiteQty:
         mode = problem.request.lonAndLatCombination
-        bounds.append(ceil(len({group_key(dn, mode) for dn in dns}) / limit))
+        bounds.append(ceil(len({dn.group_key(mode) for dn in dns}) / limit))
     return max(bounds, default=0)
 
 

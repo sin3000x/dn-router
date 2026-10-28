@@ -16,7 +16,7 @@ from decimal import Decimal
 from itertools import groupby, pairwise
 from typing import NamedTuple
 
-from .models import DN, Leg, Request, Vehicle, group_key
+from .models import DN, Leg, Request, Vehicle
 
 # 距离保留三位小数，载荷保留六位小数；范围上限为后续整数运算留余量。
 DIST_SCALE = 1000
@@ -222,7 +222,7 @@ class Problem:
     def distinct_stops(self, nodes: Iterable[int]) -> int:
         """按请求的站点计数口径去重后的站点数。"""
         mode = self.request.lonAndLatCombination
-        return len({group_key(self.dn(i), mode) for i in nodes})
+        return len({self.dn(i).group_key(mode) for i in nodes})
 
     def within_stop_limit(self, nodes: Iterable[int]) -> bool:
         limit = self.request.maxSiteQty

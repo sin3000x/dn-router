@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from dn_router import solve
-from dn_router.models import Request, group_key
+from dn_router.models import Request
 from dn_router.problem import InputError, Problem, Route, validate_routes
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -107,7 +107,7 @@ def test_geo_half_up():
     p["dnSiteVoList"][0]["deliveryLatitude"] = "-20.1234565"
     p["dnSiteVoList"][1]["deliveryLatitude"] = "-20.123457"
     q = Request.model_validate(p)
-    assert group_key(q.dnSiteVoList[0], 1) == group_key(q.dnSiteVoList[1], 1)
+    assert q.dnSiteVoList[0].group_key(1) == q.dnSiteVoList[1].group_key(1)
 
 
 # 同车同站共享 eta，紧窗口下只计算一次卸货时间。

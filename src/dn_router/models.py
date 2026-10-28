@@ -46,6 +46,27 @@ class DN(BaseModel):
             )
         return value
 
+    def group_key(self, mode: int | None) -> GroupKey:
+        """生成站点计数键，与按 siteCode 合并实际卸货停靠的规则独立。
+
+        Args:
+            mode: 请求的 lonAndLatCombination。
+
+        Returns:
+            mode 为 0 时返回 ("site", siteCode)；为 1 时返回 ("geo", 纬度, 经度)，
+            坐标四舍五入到六位小数；其余返回 ("dn", orderReleaseId)。
+        """
+        if mode == 0:
+            return ("site", self.siteCode)
+        if mode == 1:
+            # 明确使用四舍五入，保证负坐标及临界小数的分组规则一致。
+            return (
+                "geo",
+                self.deliveryLatitude.quantize(_MICRO, rounding=ROUND_HALF_UP),
+                self.deliveryLongitude.quantize(_MICRO, rounding=ROUND_HALF_UP),
+            )
+        return ("dn", self.orderReleaseId)
+
 
 # 车型容量必须为正；车型名称作为业务唯一标识，数量不设上限。
 class Vehicle(BaseModel):
@@ -120,26 +141,3 @@ class Request(BaseModel):
         ):
             raise ValueError("warehouse departure window is empty")
         return self
-
-
-def group_key(dn: DN, mode: int | None) -> GroupKey:
-    """生成站点计数键，与按 siteCode 合并实际卸货停靠的规则独立。
-
-    Args:
-        dn: 配送单。
-        mode: 请求的 lonAndLatCombination。
-
-    Returns:
-        mode 为 0 时返回 ("site", siteCode)；为 1 时返回 ("geo", 纬度, 经度)，
-        坐标四舍五入到六位小数；其余返回 ("dn", orderReleaseId)。
-    """
-    if mode == 0:
-        return ("site", dn.siteCode)
-    if mode == 1:
-        # 明确使用四舍五入，保证负坐标及临界小数的分组规则一致。
-        return (
-            "geo",
-            dn.deliveryLatitude.quantize(_MICRO, rounding=ROUND_HALF_UP),
-            dn.deliveryLongitude.quantize(_MICRO, rounding=ROUND_HALF_UP),
-        )
-    return ("dn", dn.orderReleaseId)

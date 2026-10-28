@@ -15,7 +15,7 @@ from ortools.constraint_solver import pywrapcp, routing_enums_pb2
 from pydantic import ValidationError
 
 from .initial import build_initial_routes
-from .models import GroupKey, Request, group_key
+from .models import GroupKey, Request
 from .problem import (
     DEPOT,
     DIST_SCALE,
@@ -443,7 +443,7 @@ class _RoutingModel:
         request = problem.request
         groups: defaultdict[GroupKey, list[int]] = defaultdict(list)
         for node in range(1, self.sink):
-            key = group_key(problem.dn(node), request.lonAndLatCombination)
+            key = problem.dn(node).group_key(request.lonAndLatCombination)
             groups[key].append(node)
         if not request.maxSiteQty or request.maxSiteQty >= len(groups):
             return
