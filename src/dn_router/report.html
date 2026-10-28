@@ -55,7 +55,10 @@ details.card{margin-bottom:12px}details.card>summary{cursor:pointer;list-style:n
 #map{display:block;width:100%;height:clamp(380px,calc(100vh - 400px),760px);flex:none;touch-action:none;cursor:grab;background-color:var(--surface);background-image:radial-gradient(var(--border) 1px,transparent 1px);background-size:22px 22px;border-radius:0 0 12px 12px;user-select:none;-webkit-user-select:none}#map:active{cursor:grabbing}#map g[data-stops]{cursor:pointer}
 #map text{font-size:13px;fill:var(--text);paint-order:stroke;stroke:var(--surface);stroke-width:4px;stroke-linejoin:round;pointer-events:none}#map text.num{fill:#fff;stroke:none;font-size:12px;font-weight:600}#map text.strong{font-weight:600}
 .map-foot{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:10px 16px;border-top:1px solid var(--line);font-size:13px;color:var(--muted)}.map-foot .warn{color:var(--warn)}
-.stop-info{display:flex;align-items:flex-start;gap:12px;padding:10px 16px;border-top:1px solid var(--line);background:var(--accent-soft)}.stop-info pre{flex:1;margin:0;tab-size:2;font:13px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace;white-space:pre-wrap;overflow-wrap:anywhere;user-select:text;-webkit-user-select:text}
+.stop-info{display:flex;align-items:flex-start;gap:12px;padding:10px 16px;border-top:1px solid var(--line);background:var(--accent-soft)}.stop-list{flex:1;min-width:0;max-height:160px;overflow:auto;display:flex;flex-direction:column;gap:6px;user-select:text;-webkit-user-select:text}
+.stop-row{display:flex;flex-wrap:wrap;align-items:center;gap:6px}.stop-seq{font-size:13px;color:var(--muted);min-width:56px}
+.chip{height:24px;padding:0 8px;border:1px solid var(--border);border-radius:6px;background:var(--surface);font:13px ui-monospace,SFMono-Regular,Menlo,monospace;cursor:copy;user-select:text;-webkit-user-select:text}.chip:hover{border-color:var(--accent);color:var(--accent)}.chip.site{font-weight:600}.chip.time{color:var(--muted)}
+td .chip{height:20px;padding:0 5px;border-color:transparent;background:none;color:var(--text)}td .chip:hover{border-color:var(--accent);background:var(--surface)}
 
 /* 时间轴：播放控件、阶段图例、甘特图与当前时刻游标。 */
 .clock{font:600 16px ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--text)}
@@ -139,7 +142,7 @@ dialog textarea{display:block;width:100%;height:50vh;border:0;border-top:1px sol
 <section class="card map-card"><div class="card-head"><div><h2>路线示意</h2><div class="sub">滚轮缩放 · 拖动平移 · 点击站点可复制信息 · 悬停路线可高亮 · 空格键播放 / 暂停</div></div>
 <div class="tools"><button class="btn icon" type="button" id="zoom-in" aria-label="放大">+</button><button class="btn icon" type="button" id="zoom-out" aria-label="缩小">−</button><button class="btn" type="button" id="reset">重置</button><button class="btn" type="button" id="matrix-toggle" aria-pressed="false">距离矩阵</button></div></div>
 <svg id="map" viewBox="0 0 960 520" role="img" aria-label="按经纬度绘制的配送路线"></svg>
-<div class="stop-info" id="stop-info" hidden><pre id="stop-text"></pre><button class="btn" type="button" id="stop-copy">复制</button><button class="btn icon" type="button" id="stop-close" aria-label="关闭">×</button></div>
+<div class="stop-info" id="stop-info" hidden><div class="stop-list" id="stop-text"></div><button class="btn" type="button" id="stop-copy">复制全部</button><button class="btn icon" type="button" id="stop-close" aria-label="关闭">×</button></div>
 <!-- 播放条紧贴地图，播放时无需滚动即可看到车辆移动；甘特图在下方作为详细视图。 -->
 <div class="playback">
 <button class="btn icon" type="button" id="play" aria-label="播放" aria-pressed="false"><svg viewBox="0 0 16 16" id="play-icon"><path d="M4 2.5v11l9-5.5z"/></svg></button>
@@ -341,19 +344,31 @@ $('map').addEventListener('pointermove',e=>{if(!drag)return;const p=toView(e);pa
 $('map').addEventListener('pointerup',e=>{if(drag&&Math.hypot(e.clientX-drag.x,e.clientY-drag.y)<4){const m=drag.mark;showStops(m?[Number(m.dataset.route),m.dataset.stops.split(',').map(Number)]:null);}drag=null;});
 $('map').addEventListener('pointercancel',()=>drag=null);
 
-// 点中的站点信息放在地图下方的可选中文本里，一行一站，字段以制表符分隔，粘贴到表格时自动分列。
+// 通过域名或 IP 以 http 访问时不是安全上下文，没有 navigator.clipboard；
+// 此时在点击手势内用隐藏文本框加 execCommand('copy') 复制，各浏览器仍支持。
+async function copyText(text){
+  if(navigator.clipboard&&window.isSecureContext){try{await navigator.clipboard.writeText(text);return true;}catch{}}
+  const ta=el('textarea',null,document.body);ta.value=text;ta.readOnly=true;ta.style.cssText='position:fixed;top:0;left:0;width:1px;height:1px;opacity:0';
+  ta.select();let ok=false;try{ok=document.execCommand('copy');}catch{}ta.remove();return ok;
+}
+async function copyAndToast(text,label){toast(await copyText(text)?'已复制'+(label?' '+label:''):'复制失败，请手动选中文本复制');}
+// 单个值做成可点击复制的标签；文本本身仍可选中。
+function copyChip(text,parent,cls){const b=el('button',text,parent,'chip'+(cls?' '+cls:''));b.type='button';b.title='点击复制';b.onclick=e=>{e.stopPropagation();copyAndToast(text,text);};return b;}
+
+// 点中的站点信息放在地图下方，一行一站：siteCode、DN、时间都可单独点击复制；
+// “复制全部”按制表符分隔字段，粘贴到表格时自动分列。
+let stopText='';
 function showStops(p){
   $('stop-info').hidden=!p;pickedIds=new Set(p?p[1].flatMap(j=>routes[p[0]].stops[j].orderReleaseIds):[]);if(data)matrix();if(!p)return;
-  const r=routes[p[0]];
-  $('stop-text').textContent=p[1].map(j=>{const s=r.stops[j];return [r.routeId,'#'+(j+1),s.siteCode,s.orderReleaseIds.join(', '),s.arrivalTime||''].filter(Boolean).join('\t');}).join('\n');
+  const r=routes[p[0]],root=$('stop-text');root.replaceChildren();
+  stopText=p[1].map(j=>{const s=r.stops[j];return [r.routeId,'#'+(j+1),s.siteCode,s.orderReleaseIds.join(', '),s.arrivalTime||''].filter(Boolean).join('\t');}).join('\n');
+  for(const j of p[1]){const s=r.stops[j],row=el('div',null,root,'stop-row');
+    el('span',r.routeId+' #'+(j+1),row,'stop-seq');copyChip(s.siteCode,row,'site');
+    for(const id of s.orderReleaseIds)copyChip(id,row);
+    if(s.arrivalTime)copyChip(s.arrivalTime,row,'time');}
 }
 $('stop-close').onclick=()=>showStops(null);
-// 非 localhost 的 http 地址没有剪贴板接口，退回为选中文本，由用户按快捷键复制。
-$('stop-copy').onclick=async()=>{
-  const text=$('stop-text').textContent;
-  try{await navigator.clipboard.writeText(text);toast('已复制');}
-  catch{const range=document.createRange();range.selectNodeContents($('stop-text'));getSelection().removeAllRanges();getSelection().addRange(range);toast('已选中，按 Ctrl/⌘+C 复制');}
-};
+$('stop-copy').onclick=()=>copyAndToast(stopText);
 new ResizeObserver(()=>{if(data)draw();}).observe($('map'));
 $('zoom-in').onclick=()=>zoomAt([W/2,H/2],1.4);$('zoom-out').onclick=()=>zoomAt([W/2,H/2],1/1.4);$('reset').onclick=()=>{zoom=1;pan=[0,0];draw();};
 
@@ -455,8 +470,8 @@ function details(){
     ['#','站点 / DN','距上站','行驶','开始卸货（eta）','离开','等待','卸货'].forEach(s=>el('th',s,head));
     const body=el('tbody',null,table);
     r.stops.forEach((s,j)=>{const tr=el('tr',null,body);tr.dataset.route=i;tr.dataset.stop=j;el('span',j+1,el('td',null,tr),'seq');
-      const td=el('td',null,tr);el('b',s.siteCode,td);el('span','　'+s.orderReleaseIds.length+' DN',td,'small muted');
-      for(const id of s.orderReleaseIds){const o=data.orders?.[id]||{},w=windowText(o.timeWindow),line=el('div',null,td,'dn');el('b',id,line);line.append('　体积 '+fmt(o.totalGrossVolume)+' · 重量 '+fmt(o.totalGrossWeight)+(w!=null&&w!==common?' · 窗口 '+w:''));}
+      const td=el('td',null,tr);copyChip(s.siteCode,td,'site');el('span','　'+s.orderReleaseIds.length+' DN',td,'small muted');
+      for(const id of s.orderReleaseIds){const o=data.orders?.[id]||{},w=windowText(o.timeWindow),line=el('div',null,td,'dn');copyChip(id,line);line.append('　体积 '+fmt(o.totalGrossVolume)+' · 重量 '+fmt(o.totalGrossWeight)+(w!=null&&w!==common?' · 窗口 '+w:''));}
       el('td',fmt(s.legDistance),tr,'num');el('td',s.legDurationSeconds==null?'—':fmt(s.legDurationSeconds/60,1)+' 分',tr,'num');timeCell(s.arrivalTime,tr);timeCell(s.departureTime,tr);
       el('td',fmt(s.waitingBeforeArrivalSeconds/60,1)+' 分',tr,'num');el('td',fmt(s.unloadingSeconds/60,1)+' 分',tr,'num');});
   });
