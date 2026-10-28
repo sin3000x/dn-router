@@ -255,9 +255,9 @@ def test_timed_request_still_requires_duration():
 def test_missing_matrix_is_error():
     p = case(2)
     p["allPathDistanceVoList"] = [
-        l
-        for l in p["allPathDistanceVoList"]
-        if not (l["from"] == "D0" and l["to"] == "D1")
+        leg
+        for leg in p["allPathDistanceVoList"]
+        if not (leg["from"] == "D0" and leg["to"] == "D1")
     ]
     assert solve(p)["status"] == "INVALID_INPUT"
 
