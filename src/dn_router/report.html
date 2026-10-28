@@ -80,10 +80,15 @@ details.card{margin-bottom:16px}details.card>summary{cursor:pointer;list-style:n
 table{width:100%;border-collapse:collapse;font-size:14px;white-space:nowrap}th,td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--line)}tr:last-child td{border-bottom:0}th{font-size:13px;font-weight:500;color:var(--muted);background:var(--surface-2)}
 td .sub{font-size:13px;color:var(--muted)}td .dn{font-size:13px;color:var(--muted)}td .dn b{font-weight:500;color:var(--text)}tr.active td{background:var(--accent-soft)}
 /* 距离矩阵：行 from、列 to，表头与首列吸附，路线经过的边高亮。 */
-.matrix-tools{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px}.matrix-tools input{flex:1;min-width:200px;max-width:360px}
-.matrix-scroll{overflow:auto;max-height:600px;border:1px solid var(--line);border-radius:8px}
+/* 打开矩阵时与地图并排成第三列；矩阵内容绝对定位，不撑高这一行，在卡片内滚动。 */
+.grid.with-matrix{grid-template-columns:240px minmax(0,1fr) minmax(0,1fr)}
+.matrix-card{position:relative;min-height:420px}.matrix-body{position:absolute;inset:0;display:flex;flex-direction:column}
+.matrix-tools{display:flex;gap:8px;flex-wrap:wrap;align-items:center;padding:12px 16px}.matrix-tools input{flex:1;min-width:140px}
+.matrix-scroll{flex:1;min-height:0;overflow:auto;margin:0 16px 16px;border:1px solid var(--line);border-radius:8px}
 table.matrix th,table.matrix td{padding:6px 10px;text-align:right;border-right:1px solid var(--line)}table.matrix thead th{position:sticky;top:0;z-index:1;vertical-align:bottom}table.matrix tbody th{position:sticky;left:0;z-index:1;background:var(--surface-2);text-align:left}table.matrix thead th:first-child{left:0;z-index:2;text-align:left}
-table.matrix th .sub{font-weight:400;font-size:12px;color:var(--faint)}table.matrix td.on-route{background:var(--accent-soft);color:var(--accent);font-weight:600}table.matrix td.miss{color:var(--bad)}table.matrix td.diag{color:var(--faint)}.seq{display:inline-grid;place-items:center;width:20px;height:20px;border-radius:50%;background:var(--c);color:#fff;font-size:12px;font-weight:600}
+table.matrix th .sub{font-weight:400;font-size:12px;color:var(--faint)}table.matrix td.on-route{background:var(--accent-soft);color:var(--accent);font-weight:600}table.matrix td.miss{color:var(--bad)}table.matrix td.diag{color:var(--faint)}table.matrix th.picked{background:var(--warn-soft);color:var(--warn)}table.matrix td.picked{box-shadow:inset 0 0 0 1px var(--warn)}
+#matrix-toggle[aria-pressed=true]{background:var(--accent-soft);border-color:var(--accent);color:var(--accent)}
+@media(max-width:1200px){.grid.with-matrix{grid-template-columns:260px 1fr}.matrix-card{grid-column:1/-1;height:560px}}.seq{display:inline-grid;place-items:center;width:20px;height:20px;border-radius:50%;background:var(--c);color:#fff;font-size:12px;font-weight:600}
 
 .notices{display:flex;flex-direction:column;gap:10px;margin-top:16px}.notice{padding:12px 16px;border-radius:10px;font-size:14px;background:var(--surface-2);overflow-wrap:anywhere}.notice strong{display:block;margin-bottom:4px}.notice.bad{background:var(--bad-soft)}.notice.bad strong{color:var(--bad)}.notice.warn{background:var(--warn-soft)}.notice.warn strong{color:var(--warn)}.notice div{white-space:pre-wrap}
 footer{margin-top:20px;font-size:13px;color:var(--faint);display:flex;gap:16px;flex-wrap:wrap}
@@ -100,7 +105,7 @@ dialog textarea{display:block;width:100%;height:50vh;border:0;border-top:1px sol
 .spin{width:12px;height:12px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:spin .7s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}
 .busy{opacity:.55;transition:opacity .2s;pointer-events:none}
 
-@media(max-width:900px){.top-inner,main{padding-left:16px;padding-right:16px}.grid{grid-template-columns:1fr}.route-list{max-height:260px}#map{height:380px}.source{order:3;flex-basis:100%}.meta{margin-left:auto}.source select{max-width:none;flex-basis:100%}}
+@media(max-width:900px){.top-inner,main{padding-left:16px;padding-right:16px}.grid,.grid.with-matrix{grid-template-columns:1fr}.route-list{max-height:260px}#map{height:380px}.source{order:3;flex-basis:100%}.meta{margin-left:auto}.source select{max-width:none;flex-basis:100%}}
 @media print{.top{position:static}.source,.tools,.playback{display:none!important}.grid{display:block}.card{break-inside:avoid;box-shadow:none;margin-bottom:12px}.gantt-inner{min-width:0}}
 </style></head><body>
 <header class="top"><div class="top-inner">
@@ -129,11 +134,15 @@ dialog textarea{display:block;width:100%;height:50vh;border:0;border-top:1px sol
 <div class="grid">
 <aside class="card"><div class="card-head"><div><h2>车辆与路线</h2><div class="sub" id="route-count"></div></div></div><div class="route-list" id="routes"></div></aside>
 <section class="card map-card"><div class="card-head"><div><h2>路线示意</h2><div class="sub">滚轮缩放 · 拖动平移 · 点击站点可复制信息</div></div>
-<div class="tools"><button class="btn icon" type="button" id="zoom-in" aria-label="放大">+</button><button class="btn icon" type="button" id="zoom-out" aria-label="缩小">−</button><button class="btn" type="button" id="reset">重置</button></div></div>
+<div class="tools"><button class="btn icon" type="button" id="zoom-in" aria-label="放大">+</button><button class="btn icon" type="button" id="zoom-out" aria-label="缩小">−</button><button class="btn" type="button" id="reset">重置</button><button class="btn" type="button" id="matrix-toggle" aria-pressed="false">距离矩阵</button></div></div>
 <svg id="map" viewBox="0 0 960 520" role="img" aria-label="按经纬度绘制的配送路线"></svg>
 <div class="stop-info" id="stop-info" hidden><pre id="stop-text"></pre><button class="btn" type="button" id="stop-copy">复制</button><button class="btn icon" type="button" id="stop-close" aria-label="关闭">×</button></div>
 <div class="map-foot"><span>经纬度直线示意，不代表道路；开放路线止于末站，不绘制返仓。车辆位置按时间插值。</span><span class="warn" id="mapnote"></span></div>
 </section>
+<section class="card matrix-card" id="matrix-card" hidden aria-label="距离矩阵"><div class="matrix-body">
+<div class="card-head"><div><h2>距离矩阵</h2><div class="sub">原始输入 · 行 from，列 to · 蓝色为路线经过的边</div></div><button class="btn icon" type="button" id="matrix-close" aria-label="关闭距离矩阵">×</button></div>
+<div class="matrix-tools"><input id="matrix-filter" class="field" type="search" placeholder="筛选 DN 或 siteCode" aria-label="筛选 DN 或 siteCode"><select id="matrix-metric" class="field" aria-label="矩阵数值"><option value="distance">距离</option><option value="duration">耗时（分钟）</option></select><span class="small muted" id="matrix-note"></span></div>
+<div class="matrix-scroll"><table class="matrix num" id="matrix"></table></div></div></section>
 </div>
 
 <section class="card" aria-label="时间播放与车辆甘特图">
@@ -151,9 +160,6 @@ dialog textarea{display:block;width:100%;height:50vh;border:0;border-top:1px sol
 </div></section>
 
 <section class="card details" style="margin-top:16px"><div class="card-head"><h2>停靠与装载明细</h2></div><div id="details"></div></section>
-<details class="card" id="matrix-card" style="margin-top:16px"><summary class="card-head"><div><h2>距离矩阵</h2><div class="sub">原始输入 · 行为 from，列为 to · 高亮为路线经过的边</div></div></summary><div class="card-body">
-<div class="matrix-tools"><input id="matrix-filter" class="field" type="search" placeholder="筛选 DN 或 siteCode" aria-label="筛选 DN 或 siteCode"><select id="matrix-metric" class="field" aria-label="矩阵数值"><option value="distance">距离</option><option value="duration">耗时（分钟）</option></select><span class="small muted" id="matrix-note"></span></div>
-<div class="matrix-scroll"><table class="matrix num" id="matrix"></table></div></div></details>
 <section class="notices" id="notices"></section>
 <footer id="footer"></footer>
 </div>
@@ -180,7 +186,7 @@ let W=960,H=520;
 
 // 当前报告与视图状态；selected 为 -1 时展示全部路线，缩放与平移只改变地图视图。
 let data=null,result={},routes=[],timeline=null,total=0,originDate=new Date(0);
-let selected=-1,zoom=1,pan=[0,0],drag=null;
+let selected=-1,zoom=1,pan=[0,0],drag=null,pickedIds=new Set();
 let currentTime=0,playing=false,frame=0,lastFrame=0;
 
 // 装入一份报告并重建全部视图；在线模式每次求解后调用。
@@ -318,7 +324,7 @@ $('map').addEventListener('pointercancel',()=>drag=null);
 
 // 点中的站点信息放在地图下方的可选中文本里，一行一站，字段以制表符分隔，粘贴到表格时自动分列。
 function showStops(p){
-  $('stop-info').hidden=!p;if(!p)return;
+  $('stop-info').hidden=!p;pickedIds=new Set(p?p[1].flatMap(j=>routes[p[0]].stops[j].orderReleaseIds):[]);if(data)matrix();if(!p)return;
   const r=routes[p[0]];
   $('stop-text').textContent=p[1].map(j=>{const s=r.stops[j];return [r.routeId,'#'+(j+1),s.siteCode,s.orderReleaseIds.join(', '),s.arrivalTime||''].filter(Boolean).join('\t');}).join('\n');
 }
@@ -430,7 +436,7 @@ function details(){
 const MATRIX_LIMIT=60;
 function matrix(){
   const table=$('matrix');table.replaceChildren();
-  const m=data.matrix;if(!m||!$('matrix-card').open)return;
+  const m=data.matrix;if(!m||$('matrix-card').hidden)return;
   const index=new Map(m.ids.map((id,k)=>[id,k])),depot=m.ids[0],seen=new Set([depot]),order=[depot],edges=new Set();
   for(const {r}of visible()){let prev=depot;for(const s of r.stops)for(const id of s.orderReleaseIds){edges.add(prev+'\u0000'+id);prev=id;if(!seen.has(id)){seen.add(id);order.push(id);}}}
   if(selected<0)for(const id of m.ids.slice(1))if(!seen.has(id)){seen.add(id);order.push(id);}
@@ -441,16 +447,24 @@ function matrix(){
   $('matrix-note').textContent=(matched.length>points.length?'共 '+matched.length+' 个点，仅显示前 '+MATRIX_LIMIT+' 个，可输入筛选':matched.length+' 个点')+(depot==null?' · 仓库 ID 缺失':'');
   const byDuration=$('matrix-metric').value==='duration',values=byDuration?m.duration:m.distance;
   const head=el('tr',null,el('thead',null,table));el('th','from \\ to',head);
-  const label=(cell,id)=>{el('div',id,cell);el('div',site(id),cell,'sub');};
+  const label=(cell,id)=>{el('div',id,cell);el('div',site(id),cell,'sub');if(pickedIds.has(id))cell.classList.add('picked');};
   for(const id of points)label(el('th',null,head),id);
   const body=el('tbody',null,table);
   for(const a of points){const tr=el('tr',null,body);label(el('th',null,tr),a);const row=values[index.get(a)];
     for(const b of points){const v=row[index.get(b)],td=el('td',null,tr);
       if(a===b){td.textContent='—';td.className='diag';continue;}
       if(v==null){td.textContent='缺';td.className='miss';td.title=a+' → '+b+' 矩阵中缺失';continue;}
-      td.textContent=byDuration?fmt(v/60,1):fmt(v);td.title=a+' → '+b;if(edges.has(a+'\u0000'+b))td.className='on-route';}}
+      td.textContent=byDuration?fmt(v/60,1):fmt(v);td.title=a+' → '+b;if(edges.has(a+'\u0000'+b))td.className='on-route';if(pickedIds.has(a)||pickedIds.has(b))td.classList.add('picked');}}
+  // 地图上点中的站点在矩阵内滚动到可见位置；只滚动矩阵容器，不带动整页。
+  const box=table.parentElement,row=table.querySelector('tbody th.picked'),col=table.querySelector('thead th.picked');
+  if(row)box.scrollTop=Math.max(0,row.offsetTop-table.tHead.offsetHeight);
+  if(col)box.scrollLeft=Math.max(0,col.offsetLeft-table.tHead.rows[0].cells[0].offsetWidth);
 }
-$('matrix-card').ontoggle=matrix;$('matrix-filter').oninput=matrix;$('matrix-metric').onchange=matrix;
+// 是否显示矩阵按浏览器记住；存储不可用时默认关闭。
+function showMatrix(on){$('matrix-card').hidden=!on;document.querySelector('.grid').classList.toggle('with-matrix',on);$('matrix-toggle').setAttribute('aria-pressed',String(on));try{localStorage.setItem('dn-router.matrix',on?'1':'');}catch{}if(data)matrix();}
+$('matrix-toggle').onclick=()=>showMatrix($('matrix-card').hidden);$('matrix-close').onclick=()=>showMatrix(false);
+$('matrix-filter').oninput=matrix;$('matrix-metric').onchange=matrix;
+try{showMatrix(localStorage.getItem('dn-router.matrix')==='1');}catch{}
 
 // 错误、异常单和告警分别展示，即使没有路线也能查看失败原因。
 function notices(){
