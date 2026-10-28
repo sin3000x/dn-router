@@ -34,12 +34,14 @@ main{max-width:1480px;margin:auto;padding:20px 24px 40px}
 /* 请求参数：关键入参回显与分组口径说明。 */
 .params{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px 20px;margin:0}.params div{min-width:0}.params dt{font-size:13px;color:var(--muted)}.params dd{margin:2px 0 0;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
 .vehicle-list{display:flex;flex-wrap:wrap;gap:6px;margin-top:12px;font-size:13px}.vehicle-list span{padding:2px 8px;border-radius:6px;background:var(--surface-2);color:var(--muted)}.vehicle-list b{color:var(--text);font-weight:500}
-details.card{margin-bottom:16px}details.card>summary{cursor:pointer;list-style:none}details.card>summary::-webkit-details-marker{display:none}details.card>summary h2:before{content:'▸ ';color:var(--faint)}details.card[open]>summary h2:before{content:'▾ '}details.card:not([open])>summary{border-bottom:0}
-.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:16px}.stat{padding:14px 16px}.stat .label{font-size:13px;color:var(--muted)}.stat .value{font-size:26px;font-weight:600;margin-top:4px;letter-spacing:-.02em;font-variant-numeric:tabular-nums}.stat .unit{font-size:13px;color:var(--faint);margin-left:4px;font-weight:400}
+details.card{margin-bottom:12px}details.card>summary{cursor:pointer;list-style:none;padding-top:10px;padding-bottom:10px}details.card>summary::-webkit-details-marker{display:none}details.card>summary h2:before{content:'▸ ';color:var(--faint)}details.card[open]>summary h2:before{content:'▾ '}details.card:not([open])>summary{border-bottom:0}
+.summary-line{display:flex;align-items:baseline;gap:12px;min-width:0}.summary-line h2{flex:none}.card-head .summary-line .sub{margin-top:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:12px}.stat{padding:8px 16px}.stat .label{font-size:13px;color:var(--muted)}.stat .value{font-size:22px;font-weight:600;letter-spacing:-.02em;font-variant-numeric:tabular-nums}.stat .unit{font-size:13px;color:var(--faint);margin-left:4px;font-weight:400}
 
-/* 路线列表与地图并排。 */
+/* 路线列表与地图并排；列表高度跟随地图卡片，自身不撑高这一行，内部滚动不带动整页。 */
 .grid{display:grid;grid-template-columns:300px 1fr;gap:16px;margin-bottom:16px}
-.route-list{padding:8px;max-height:560px;overflow:auto;display:flex;flex-direction:column;gap:4px}
+.grid>aside{display:flex;flex-direction:column}
+.route-list{flex:1;min-height:0;contain:size;padding:8px;overflow:auto;overscroll-behavior:contain;display:flex;flex-direction:column;gap:4px}
 .route{display:flex;gap:10px;width:100%;text-align:left;padding:10px;border:1px solid transparent;border-radius:10px;background:none;cursor:pointer;transition:background .15s}
 .route:hover{background:var(--surface-2)}.route[aria-pressed=true]{background:var(--accent-soft);border-color:color-mix(in srgb,var(--accent) 30%,transparent)}
 .dot{flex:none;width:10px;height:10px;border-radius:3px;background:var(--c,var(--faint));margin-top:5px}
@@ -49,15 +51,16 @@ details.card{margin-bottom:16px}details.card>summary{cursor:pointer;list-style:n
 .meter{height:4px;border-radius:2px;background:var(--surface-2);overflow:hidden}.meter i{display:block;height:100%;background:var(--c,var(--accent));border-radius:2px}
 
 .map-card{display:flex;flex-direction:column}
-#map{display:block;width:100%;height:520px;flex:1;touch-action:none;cursor:grab;background-color:var(--surface);background-image:radial-gradient(var(--border) 1px,transparent 1px);background-size:22px 22px;border-radius:0 0 12px 12px;user-select:none;-webkit-user-select:none}#map:active{cursor:grabbing}#map g[data-stops]{cursor:pointer}
+/* 地图高度随视口调整，让指标、地图与播放条在首屏内同时可见。 */
+#map{display:block;width:100%;height:clamp(380px,calc(100vh - 400px),760px);flex:none;touch-action:none;cursor:grab;background-color:var(--surface);background-image:radial-gradient(var(--border) 1px,transparent 1px);background-size:22px 22px;border-radius:0 0 12px 12px;user-select:none;-webkit-user-select:none}#map:active{cursor:grabbing}#map g[data-stops]{cursor:pointer}
 #map text{font-size:13px;fill:var(--text);paint-order:stroke;stroke:var(--surface);stroke-width:4px;stroke-linejoin:round;pointer-events:none}#map text.num{fill:#fff;stroke:none;font-size:12px;font-weight:600}#map text.strong{font-weight:600}
 .map-foot{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:10px 16px;border-top:1px solid var(--line);font-size:13px;color:var(--muted)}.map-foot .warn{color:var(--warn)}
 .stop-info{display:flex;align-items:flex-start;gap:12px;padding:10px 16px;border-top:1px solid var(--line);background:var(--accent-soft)}.stop-info pre{flex:1;margin:0;tab-size:2;font:13px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace;white-space:pre-wrap;overflow-wrap:anywhere;user-select:text;-webkit-user-select:text}
 
 /* 时间轴：播放控件、阶段图例、甘特图与当前时刻游标。 */
-.clock{font:600 20px ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--text)}
-.playback{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.playback input[type=range]{flex:1;min-width:160px;accent-color:var(--accent)}
-.legend{display:flex;gap:16px;flex-wrap:wrap;font-size:13px;color:var(--muted);margin:14px 0 6px}.legend span{display:inline-flex;align-items:center;gap:6px}.legend i{width:12px;height:8px;border-radius:2px}
+.clock{font:600 16px ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--text)}
+.playback{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 16px;border-top:1px solid var(--line)}.playback input[type=range]{flex:1;min-width:160px;accent-color:var(--accent)}
+.legend{display:flex;gap:16px;flex-wrap:wrap;font-size:13px;color:var(--muted);margin:0 0 6px}.legend span{display:inline-flex;align-items:center;gap:6px}.legend i{width:12px;height:8px;border-radius:2px}
 .gantt{overflow-x:auto}.gantt-inner{min-width:760px}
 .g-row{display:grid;grid-template-columns:170px 1fr;gap:16px;align-items:center;padding:6px 0}.g-row+.g-row{border-top:1px solid var(--line)}
 .g-name{min-width:0}.g-name button{display:flex;align-items:center;gap:8px;padding:0;border:0;background:none;cursor:pointer;font-weight:600;max-width:100%}.g-name button span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.g-name .dot{margin:0}.g-state{font-size:13px;color:var(--muted);margin-left:18px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -73,24 +76,24 @@ details.card{margin-bottom:16px}details.card>summary{cursor:pointer;list-style:n
 .note{font-size:13px;color:var(--faint);margin:12px 0 0}
 
 /* 停靠明细与装载率。 */
-.details{display:flex;flex-direction:column}.route-detail{padding:16px}.route-detail+.route-detail{border-top:1px solid var(--line)}
-.rd-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.rd-head .dot{margin:0}.rd-meta{font-size:13px;color:var(--muted);margin:4px 0 12px}
+.details{display:flex;flex-direction:column}.route-detail{padding:12px 16px}.route-detail+.route-detail{border-top:1px solid var(--line)}
+.route-detail>summary{cursor:pointer;list-style:none}.route-detail>summary::-webkit-details-marker{display:none}.route-detail>summary .rd-head:before{content:'▸';width:10px;margin-right:-4px;color:var(--faint)}.route-detail[open]>summary .rd-head:before{content:'▾'}.route-detail:not([open]) .loads{margin-bottom:0}
+.rd-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.rd-head .dot{margin:0}.rd-meta{font-size:13px;color:var(--muted);margin:4px 0 10px}
 .loads{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px 24px;margin-bottom:12px;max-width:640px}.load-row{display:flex;justify-content:space-between;font-size:13px;color:var(--muted);margin-bottom:6px}.load-row b{color:var(--text);font-weight:500;font-variant-numeric:tabular-nums}.loads .meter{height:6px}
 .table-scroll{overflow:auto;border:1px solid var(--line);border-radius:8px}
 table{width:100%;border-collapse:collapse;font-size:14px;white-space:nowrap}th,td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--line)}tr:last-child td{border-bottom:0}th{font-size:13px;font-weight:500;color:var(--muted);background:var(--surface-2)}
 td .sub{font-size:13px;color:var(--muted)}td .dn{font-size:13px;color:var(--muted)}td .dn b{font-weight:500;color:var(--text)}tr.active td{background:var(--accent-soft)}
 /* 距离矩阵：行 from、列 to，表头与首列吸附，路线经过的边高亮。 */
-/* 打开矩阵时与地图并排成第三列；矩阵内容绝对定位，不撑高这一行，在卡片内滚动。 */
-.grid.with-matrix{grid-template-columns:240px minmax(0,1fr) minmax(0,1fr)}
-.matrix-card{position:relative;min-height:420px}.matrix-body{position:absolute;inset:0;display:flex;flex-direction:column}
-.matrix-tools{display:flex;gap:8px;flex-wrap:wrap;align-items:center;padding:12px 16px}.matrix-tools input{flex:1;min-width:140px}
-.matrix-scroll{flex:1;min-height:0;overflow:auto;margin:0 16px 16px;border:1px solid var(--line);border-radius:8px}
+/* 打开矩阵时放在地图下方占满整行，不挤压地图；矩阵内容绝对定位，在卡片内滚动。 */
+.matrix-card{position:relative;grid-column:1/-1;height:520px}.matrix-body{position:absolute;inset:0;display:flex;flex-direction:column}
+.matrix-tools{display:flex;gap:8px;flex-wrap:wrap;align-items:center;padding:12px 16px}.matrix-tools input{flex:1;min-width:140px;max-width:360px}
+.matrix-scroll{flex:1;min-height:0;overflow:auto;overscroll-behavior:contain;margin:0 16px 16px;border:1px solid var(--line);border-radius:8px}
 table.matrix th,table.matrix td{padding:6px 10px;text-align:right;border-right:1px solid var(--line)}table.matrix thead th{position:sticky;top:0;z-index:1;vertical-align:bottom}table.matrix tbody th{position:sticky;left:0;z-index:1;background:var(--surface-2);text-align:left}table.matrix thead th:first-child{left:0;z-index:2;text-align:left}
 table.matrix th .sub{font-weight:400;font-size:12px;color:var(--faint)}table.matrix td.on-route{background:var(--accent-soft);color:var(--accent);font-weight:600}table.matrix td.miss{color:var(--bad)}table.matrix td.diag{color:var(--faint)}table.matrix th.picked{background:var(--warn-soft);color:var(--warn)}table.matrix td.picked{box-shadow:inset 0 0 0 1px var(--warn)}
 #matrix-toggle[aria-pressed=true]{background:var(--accent-soft);border-color:var(--accent);color:var(--accent)}
-@media(max-width:1200px){.grid.with-matrix{grid-template-columns:260px 1fr}.matrix-card{grid-column:1/-1;height:560px}}.seq{display:inline-grid;place-items:center;width:20px;height:20px;border-radius:50%;background:var(--c);color:#fff;font-size:12px;font-weight:600}
+.seq{display:inline-grid;place-items:center;width:20px;height:20px;border-radius:50%;background:var(--c);color:#fff;font-size:12px;font-weight:600}
 
-.notices{display:flex;flex-direction:column;gap:10px;margin-top:16px}.notice{padding:12px 16px;border-radius:10px;font-size:14px;background:var(--surface-2);overflow-wrap:anywhere}.notice strong{display:block;margin-bottom:4px}.notice.bad{background:var(--bad-soft)}.notice.bad strong{color:var(--bad)}.notice.warn{background:var(--warn-soft)}.notice.warn strong{color:var(--warn)}.notice div{white-space:pre-wrap}
+.notices{display:flex;flex-direction:column;gap:10px;margin-top:16px}.notices.lead{margin:0 0 12px}.notice{padding:12px 16px;border-radius:10px;font-size:14px;background:var(--surface-2);overflow-wrap:anywhere}.notice strong{display:block;margin-bottom:4px}.notice.bad{background:var(--bad-soft)}.notice.bad strong{color:var(--bad)}.notice.warn{background:var(--warn-soft)}.notice.warn strong{color:var(--warn)}.notice div{white-space:pre-wrap}
 footer{margin-top:20px;font-size:13px;color:var(--faint);display:flex;gap:16px;flex-wrap:wrap}
 .empty{padding:40px 16px;text-align:center;color:var(--muted)}
 
@@ -105,7 +108,7 @@ dialog textarea{display:block;width:100%;height:50vh;border:0;border-top:1px sol
 .spin{width:12px;height:12px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:spin .7s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}
 .busy{opacity:.55;transition:opacity .2s;pointer-events:none}
 
-@media(max-width:900px){.top-inner,main{padding-left:16px;padding-right:16px}.grid,.grid.with-matrix{grid-template-columns:1fr}.route-list{max-height:260px}#map{height:380px}.source{order:3;flex-basis:100%}.meta{margin-left:auto}.source select{max-width:none;flex-basis:100%}}
+@media(max-width:900px){.top-inner,main{padding-left:16px;padding-right:16px}.grid{grid-template-columns:1fr}.route-list{max-height:260px;contain:none}#map{height:380px}.source{order:3;flex-basis:100%}.meta{margin-left:auto}.source select{max-width:none;flex-basis:100%}}
 @media print{.top{position:static}.source,.tools,.playback{display:none!important}.grid{display:block}.card{break-inside:avoid;box-shadow:none;margin-bottom:12px}.gantt-inner{min-width:0}}
 </style></head><body>
 <header class="top"><div class="top-inner">
@@ -129,14 +132,22 @@ dialog textarea{display:block;width:100%;height:50vh;border:0;border-top:1px sol
 
 <div id="report" hidden>
 <section class="stats" id="metrics" aria-label="求解汇总"></section>
-<details class="card" id="request-card" open><summary class="card-head"><div><h2>请求参数</h2><div class="sub" id="request-sub"></div></div></summary><div class="card-body"><dl class="params" id="params"></dl><div class="vehicle-list" id="vehicle-list"></div></div></details>
+<details class="card" id="request-card"><summary class="card-head"><div class="summary-line"><h2>请求参数</h2><span class="sub" id="request-sub"></span></div></summary><div class="card-body"><dl class="params" id="params"></dl><div class="vehicle-list" id="vehicle-list"></div></div></details>
 
-<div class="grid">
+<div class="grid" id="main-grid">
 <aside class="card"><div class="card-head"><div><h2>车辆与路线</h2><div class="sub" id="route-count"></div></div></div><div class="route-list" id="routes"></div></aside>
-<section class="card map-card"><div class="card-head"><div><h2>路线示意</h2><div class="sub">滚轮缩放 · 拖动平移 · 点击站点可复制信息</div></div>
+<section class="card map-card"><div class="card-head"><div><h2>路线示意</h2><div class="sub">滚轮缩放 · 拖动平移 · 点击站点可复制信息 · 悬停路线可高亮 · 空格键播放 / 暂停</div></div>
 <div class="tools"><button class="btn icon" type="button" id="zoom-in" aria-label="放大">+</button><button class="btn icon" type="button" id="zoom-out" aria-label="缩小">−</button><button class="btn" type="button" id="reset">重置</button><button class="btn" type="button" id="matrix-toggle" aria-pressed="false">距离矩阵</button></div></div>
 <svg id="map" viewBox="0 0 960 520" role="img" aria-label="按经纬度绘制的配送路线"></svg>
 <div class="stop-info" id="stop-info" hidden><pre id="stop-text"></pre><button class="btn" type="button" id="stop-copy">复制</button><button class="btn icon" type="button" id="stop-close" aria-label="关闭">×</button></div>
+<!-- 播放条紧贴地图，播放时无需滚动即可看到车辆移动；甘特图在下方作为详细视图。 -->
+<div class="playback">
+<button class="btn icon" type="button" id="play" aria-label="播放" aria-pressed="false"><svg viewBox="0 0 16 16" id="play-icon"><path d="M4 2.5v11l9-5.5z"/></svg></button>
+<button class="btn icon" type="button" id="restart" aria-label="回到起点" title="回到起点"><svg viewBox="0 0 16 16"><path d="M3 2h2v12H3zM14 2.5v11L6 8z"/></svg></button>
+<input id="slider" type="range" min="0" max="0" step="1" value="0" aria-label="配送时间">
+<output class="clock" id="clock"></output>
+<select id="speed" class="field" aria-label="播放速度"><option value="60">1 分钟/秒</option><option value="300" selected>5 分钟/秒</option><option value="900">15 分钟/秒</option><option value="3600">1 小时/秒</option></select>
+</div>
 <div class="map-foot"><span>经纬度直线示意，不代表道路；开放路线止于末站，不绘制返仓。车辆位置按时间插值。</span><span class="warn" id="mapnote"></span></div>
 </section>
 <section class="card matrix-card" id="matrix-card" hidden aria-label="距离矩阵"><div class="matrix-body">
@@ -145,21 +156,15 @@ dialog textarea{display:block;width:100%;height:50vh;border:0;border-top:1px sol
 <div class="matrix-scroll"><table class="matrix num" id="matrix"></table></div></div></section>
 </div>
 
-<section class="card" aria-label="时间播放与车辆甘特图">
-<div class="card-head"><div><h2>配送时间轴</h2><div class="sub">拖动或点击轨道定位时刻，点击色块跳到该阶段 · 空格键播放 / 暂停</div></div><output class="clock" id="clock"></output></div>
+<section class="card" id="timeline-card" aria-label="车辆甘特图">
+<div class="card-head"><div><h2>配送时间轴</h2><div class="sub">点击轨道定位时刻，点击色块跳到该阶段；播放控件在地图下方</div></div></div>
 <div class="card-body">
-<div class="playback">
-<button class="btn icon" type="button" id="play" aria-label="播放" aria-pressed="false"><svg viewBox="0 0 16 16" id="play-icon"><path d="M4 2.5v11l9-5.5z"/></svg></button>
-<button class="btn icon" type="button" id="restart" aria-label="回到起点" title="回到起点"><svg viewBox="0 0 16 16"><path d="M3 2h2v12H3zM14 2.5v11L6 8z"/></svg></button>
-<input id="slider" type="range" min="0" max="0" step="1" value="0" aria-label="配送时间">
-<select id="speed" class="field" aria-label="播放速度"><option value="60">1 分钟/秒</option><option value="300" selected>5 分钟/秒</option><option value="900">15 分钟/秒</option><option value="3600">1 小时/秒</option></select>
-</div>
 <div class="legend"><span><i style="background:var(--travel)"></i>行驶</span><span><i style="background:var(--wait)"></i>等待</span><span><i style="background:var(--unload)"></i>卸货</span><span><i style="background:var(--cursor);width:2px;height:12px"></i>当前时刻</span></div>
 <div class="gantt"><div class="gantt-inner" id="gantt"></div></div>
 <p class="note">行驶按矩阵耗时沿直线插值；为演示采用“先行驶后等待”，等待标记放在目的站附近，仅作位置示意。时间为业务当地时间，不随浏览器时区换算。</p>
 </div></section>
 
-<section class="card details" style="margin-top:16px"><div class="card-head"><h2>停靠与装载明细</h2></div><div id="details"></div></section>
+<section class="card details" id="details-card" style="margin-top:16px"><div class="card-head"><div><h2>停靠与装载明细</h2><div class="sub">时刻与出仓同日时只显示时分，悬停查看完整时间</div></div><button class="btn" type="button" id="details-toggle">全部展开</button></div><div id="details"></div></section>
 <section class="notices" id="notices"></section>
 <footer id="footer"></footer>
 </div>
@@ -185,8 +190,8 @@ const PHASE={travel:'行驶',wait:'等待',unload:'卸货'};
 let W=960,H=520;
 
 // 当前报告与视图状态；selected 为 -1 时展示全部路线，缩放与平移只改变地图视图。
-let data=null,result={},routes=[],timeline=null,total=0,originDate=new Date(0);
-let selected=-1,zoom=1,pan=[0,0],drag=null,pickedIds=new Set();
+let data=null,result={},routes=[],timeline=null,total=0,originDate=new Date(0),baseDay='';
+let selected=-1,hovered=-1,zoom=1,pan=[0,0],drag=null,pickedIds=new Set();
 let currentTime=0,playing=false,frame=0,lastFrame=0;
 
 // 装入一份报告并重建全部视图；在线模式每次求解后调用。
@@ -195,9 +200,14 @@ function render(d){
   // Python 给出相对业务当地起点的秒数；这里只借用 UTC 方法格式化墙上时钟，避免浏览器时区或夏令时干扰。
   const o=(timeline?.startTime||'2000-01-01 00:00:00').match(/\d+/g).map(Number);
   originDate=new Date(Date.UTC(o[0],o[1]-1,o[2],o[3]||0,o[4]||0,o[5]||0));
-  currentTime=0;selected=-1;
+  baseDay=(timeline?.startTime||d.request?.earliestShippingDate||'').slice(0,10);
+  currentTime=0;selected=-1;hovered=-1;
   $('welcome').hidden=true;$('report').hidden=false;
   const status=result.status||'UNKNOWN';
+  // 没有路线时隐藏地图、时间轴和明细；不可行或有异常 DN 时把原因放到指标下方，不必翻到页底。
+  for(const id of ['main-grid','timeline-card','details-card'])$(id).hidden=!routes.length;
+  const lead=status!=='FEASIBLE'||!!result.errors?.length||!!result.rejectedOrders?.length;
+  (lead?$('metrics'):$('details-card')).after($('notices'));$('notices').classList.toggle('lead',lead);
   $('status').hidden=false;$('status').textContent=status;
   $('status').className='pill '+(status==='FEASIBLE'?'ok':/INVALID|INFEASIBLE|ERROR/.test(status)?'bad':'warn');
   $('task').textContent=result.taskNo||'';$('task').title=result.taskNo||'';
@@ -221,7 +231,8 @@ const countMode=m=>({0:'siteCode',1:'坐标'})[m]??'DN';
 // 回显关键入参；缺省字段直接显示默认值。
 function requestInfo(){
   const q=data.request||{},root=$('params');root.replaceChildren();
-  $('request-sub').textContent=fmt(q.dnCount)+' DN · '+fmt(q.siteCodeCount)+' 个 siteCode · '+fmt(q.legCount)+' 条矩阵边';
+  // 折叠时这一行就是请求摘要，展开后再看全部参数。
+  $('request-sub').textContent=[fmt(q.dnCount)+' DN',fmt(q.siteCodeCount)+' 个 siteCode',fmt(data.vehicles.length)+' 种车型',q.earliestShippingDate?'出仓 '+q.earliestShippingDate:'不计时间','站点上限 '+(q.maxSiteQty||'不限'),fmt(q.legCount)+' 条矩阵边'].join(' · ');
   const item=(label,value)=>{const d=el('div',null,root);el('dt',label,d);el('dd',value,d);};
   item('仓库',q.sourceLocation??'—');
   item('出仓',q.earliestShippingDate?q.earliestShippingDate+(q.latestShippingDate?' ~ '+q.latestShippingDate:''):'不计时间');
@@ -248,7 +259,7 @@ function routeList(){
   $('route-count').textContent=routes.length?routes.length+' 条路线 · '+routes.reduce((n,r)=>n+dnCount(r),0)+' DN':'无路线';
   const all=el('button',null,root,'route');all.type='button';el('span',null,all,'dot');const m=el('div',null,all,'route-main');el('div','全部路线',m,'route-title');el('div','总览所有车辆',m,'route-sub');all.onclick=()=>select(-1);
   routes.forEach((r,i)=>{
-    const b=el('button',null,root,'route');b.type='button';b.style.setProperty('--c',color(i));el('span',null,b,'dot');
+    const b=el('button',null,root,'route');b.type='button';b.style.setProperty('--c',color(i));el('span',null,b,'dot');hoverable(b,i);
     const main=el('div',null,b,'route-main'),t=el('div',null,main,'route-title');el('b',r.routeId,t);el('span',r.vehicleTypeName,t);
     el('div',r.stops.length+' 次停靠 · '+dnCount(r)+' DN · 距离 '+fmt(r.totalDistance),main,'route-sub');
     const bars=el('div',null,main,'minibars');
@@ -259,6 +270,9 @@ function routeList(){
 
 // 路线筛选同时驱动地图、甘特图和明细，不改变全局播放时刻。
 function visible(){return routes.map((r,i)=>({r,i})).filter(x=>selected<0||x.i===selected);}
+// 路线超过调色板数量时颜色会重复，悬停列表或甘特图的车辆时在地图上突出该路线、淡化其余路线。
+function hover(i){if(hovered===i)return;hovered=i;draw();}
+function hoverable(node,i){node.addEventListener('mouseenter',()=>hover(i));node.addEventListener('mouseleave',()=>hover(-1));}
 function select(i){selected=i;zoom=1;pan=[0,0];showStops(null);[...$('routes').children].forEach((b,j)=>b.setAttribute('aria-pressed',String(j===i+1)));drawGantt();details();matrix();updateTime();draw();}
 
 // 按可见坐标拟合视图，用纬度余弦修正经度比例；缩放在投影后应用，标记尺寸保持不变。
@@ -266,6 +280,10 @@ function draw(){
   const map=$('map'),box=map.getBoundingClientRect();map.replaceChildren();
   if(box.width&&box.height){W=box.width;H=box.height;map.setAttribute('viewBox',`0 0 ${W} ${H}`);}
   const list=visible(),points=list.flatMap(({r})=>r.stops.map(s=>s.coordinate)).filter(Boolean);
+  // 悬停的路线最后绘制，叠在其他路线之上；视图拟合仍按全部可见路线计算，悬停不移动地图。
+  const focus=selected<0&&list.some(x=>x.i===hovered)?hovered:-1;
+  if(focus>=0)list.push(...list.splice(list.findIndex(x=>x.i===focus),1));
+  const fade=i=>focus>=0&&i!==focus?.12:1;
   if(data.depot.coordinate)points.push(data.depot.coordinate);
   const missing=list.reduce((n,{r})=>n+r.stops.filter(s=>!s.coordinate).length,0);
   $('mapnote').textContent=(missing?missing+' 个停靠坐标缺失或同站 DN 坐标不一致，图中断开，明细仍完整。':'')+(data.depot.coordinate?'':' 仓库坐标不可用。');
@@ -275,12 +293,13 @@ function draw(){
   const xy=p=>[pan[0]+zoom*(W/2+(p[0]-cx)*cos*scale),pan[1]+zoom*(H/2-(p[1]-cy)*scale)];
   const defs=sv('defs',{},map);
   list.forEach(({i})=>{const m=sv('marker',{id:'arrow'+i,viewBox:'0 0 10 10',refX:9,refY:5,markerWidth:9,markerHeight:9,markerUnits:'userSpaceOnUse',orient:'auto'},defs);sv('path',{d:'M0 1L9 5L0 9z',fill:color(i)},m);});
-  const lines=sv('g',{},map),nodes=sv('g',{},map),vehicles=sv('g',{},map);
+  const lineLayer=sv('g',{},map),nodeLayer=sv('g',{},map),vehicles=sv('g',{},map);
   // 线段两端各缩进到标记边缘，箭头不会被站点圆遮住；已走部分叠加实线。
   const trim=(a,b,s,e)=>{const dx=b[0]-a[0],dy=b[1]-a[1],len=Math.hypot(dx,dy);if(len<s+e+2)return null;return [[a[0]+dx/len*s,a[1]+dy/len*s],[b[0]-dx/len*e,b[1]-dy/len*e]];};
-  const showLabels=list.reduce((n,{r})=>n+r.stops.length,0)<=40,labelSlots=new Map();
+  // 站名标签超过 20 个就互相重叠，此时只显示序号，筛选单条路线或悬停站点查看站名。
+  const showLabels=list.reduce((n,{r})=>n+r.stops.length,0)<=20,labelSlots=new Map();
   list.forEach(({r,i})=>{
-    const c=color(i);let prev=data.depot.coordinate,prevIsDepot=true;
+    const c=color(i),lines=sv('g',{opacity:fade(i)},lineLayer),nodes=sv('g',{opacity:fade(i)},nodeLayer);let prev=data.depot.coordinate,prevIsDepot=true;
     r.stops.forEach((s,j)=>{
       if(prev&&s.coordinate&&(prev[0]!==s.coordinate[0]||prev[1]!==s.coordinate[1])){
         const seg=timeline?.routes[i]?.segments.find(x=>x.kind==='travel'&&x.stopIndex===j);
@@ -302,14 +321,14 @@ function draw(){
       if(showLabels)for(const [s,j]of group){const key=s.coordinate.join(','),slot=labelSlots.get(key)||0;labelSlots.set(key,slot+1);const t=sv('text',{x:x+w/2+6,y:y+4+slot*16},g);t.textContent=(selected<0?r.routeId+' ':'')+'#'+(j+1)+' '+s.siteCode;}
     }
   });
-  if(data.depot.coordinate){const [x,y]=xy(data.depot.coordinate),g=sv('g',{},nodes);sv('rect',{x:x-9,y:y-9,width:18,height:18,rx:4,fill:'var(--text)',stroke:'var(--surface)','stroke-width':2.5,transform:`rotate(45 ${x} ${y})`},g);const t=sv('text',{x:x+18,y:y+4,class:'strong'},g);t.textContent='仓库 '+data.depot.name;}
+  if(data.depot.coordinate){const [x,y]=xy(data.depot.coordinate),g=sv('g',{},nodeLayer);sv('rect',{x:x-9,y:y-9,width:18,height:18,rx:4,fill:'var(--text)',stroke:'var(--surface)','stroke-width':2.5,transform:`rotate(45 ${x} ${y})`},g);const t=sv('text',{x:x+18,y:y+4,class:'strong'},g);t.textContent='仓库 '+data.depot.name;}
   // 车辆位置由时间轴插值，等待时只显示目的站附近的示意位置；未出发与已完成不画车辆。
   const slots=new Map();
   list.forEach(({r,i})=>{const st=stateAt(i);if(!st.point||!st.kind)return;const [x,y]=xy(st.point),c=color(i),key=st.point.join(','),slot=slots.get(key)||0;slots.set(key,slot+1);
-    const g=sv('g',{'data-route':r.routeId,'data-state':st.kind},vehicles);
+    const g=sv('g',{'data-route':r.routeId,'data-state':st.kind,opacity:fade(i)},vehicles);
     sv('circle',{cx:x,cy:y,r:16,fill:'var(--surface)',opacity:.92,stroke:c,'stroke-width':2,'stroke-dasharray':st.kind==='wait'?'4 3':''},g);sv('rect',{x:x-6,y:y-6,width:12,height:12,rx:3,fill:c},g);
     sv('title',{},g).textContent=r.routeId+' · '+st.label+' · '+wallTime(currentTime);
-    const right=x>W-180,t=sv('text',{x:right?x-22:x+22,y:y+26+slot*18,'text-anchor':right?'end':'start',class:'strong'},g);t.textContent=r.routeId+' '+PHASE[st.kind];});
+    const right=x>W-180,t=sv('text',{x:right?x-22:x+22,y:y+26+slot*18,'text-anchor':right?'end':'start',class:'strong'},g);t.textContent=r.routeId;});
 }
 
 // 地图缩放以指针为中心；屏幕坐标经 CTM 换算为视图坐标，适配任意屏幕尺寸。
@@ -393,7 +412,7 @@ function drawGantt(){
   const head=el('div',null,root,'g-row');el('div','车辆 / 当前状态',head,'small faint');const axis=el('div',null,head,'axis');
   for(const [t,label]of tk)el('span',label,axis).style.left=pos(t);
   visible().forEach(({r,i})=>{
-    const track=timeline.routes[i],row=el('div',null,root,'g-row'+(selected===i?' selected':''));
+    const track=timeline.routes[i],row=el('div',null,root,'g-row'+(selected===i?' selected':''));hoverable(row,i);
     const name=el('div',null,row,'g-name'),btn=el('button',null,name);btn.type='button';el('i',null,btn,'dot').style.setProperty('--c',color(i));el('span',r.routeId+' · '+r.vehicleTypeName,btn);btn.onclick=()=>select(i);
     el('div',null,name,'g-state').id='gantt-state-'+i;
     const bar=el('div',null,row,'track');bar.setAttribute('aria-label',r.routeId+' 时间表');
@@ -410,25 +429,38 @@ function drawGantt(){
   });
 }
 
+// 与出仓同一天的时刻只显示时分，跨日补上月-日；完整时间放在悬浮提示里。
+function short(t){if(!t)return '—';const m=String(t).match(/^(\d{4}-(\d\d-\d\d))[ T](\d\d:\d\d)/);return m?(m[1]===baseDay?'':m[2]+' ')+m[3]:String(t);}
+const windowText=w=>Array.isArray(w)?(w.length?w.map(short).join(' → '):'空'):null;
+function timeCell(t,tr){const td=el('td',short(t),tr,'num');if(t)td.title=t;}
+function syncDetailsToggle(){const all=[...$('details').querySelectorAll('details')];$('details-toggle').hidden=all.length<2;$('details-toggle').textContent=all.length&&all.every(d=>d.open)?'全部收起':'全部展开';}
+$('details-toggle').onclick=()=>{const all=[...$('details').querySelectorAll('details')],open=!all.every(d=>d.open);all.forEach(d=>d.open=open);syncDetailsToggle();};
+
 // 停靠表按实际停靠展示合并后的 DN；装载率依据输入车型容量。
+// 看全部路线时每条路线默认只显示摘要，点开看停靠表；筛选单条路线时直接展开。
+// 路线内多数 DN 共用的时间窗写在摘要里，DN 行只标出与之不同的窗口。
 function details(){
   const root=$('details');root.replaceChildren();
-  if(!routes.length){el('div','当前结果没有配送路线，请查看下方状态说明。',root,'empty');return;}
-  visible().forEach(({r,i})=>{
-    const box=el('article',null,root,'route-detail');box.style.setProperty('--c',color(i));
-    const h=el('div',null,box,'rd-head');el('span',null,h,'dot');el('h3',r.routeId+' · '+r.vehicleTypeName,h);
-    el('div',(r.departureTime?'出仓 '+r.departureTime+' → 完成 '+r.completionTime+'　':'')+'距离 '+fmt(r.totalDistance)+'　停靠 '+fmt(r.physicalStopCount)+' 次　站点计数 '+fmt(r.siteCount)+(data.request?.maxSiteQty?' / '+data.request.maxSiteQty:'')+'（'+countMode(data.request?.lonAndLatCombination)+'）',box,'rd-meta');
-    const ld=el('div',null,box,'loads');
+  const list=visible();
+  list.forEach(({r,i})=>{
+    const box=el('details',null,root,'route-detail');box.style.setProperty('--c',color(i));box.open=list.length===1;box.ontoggle=syncDetailsToggle;
+    const sum=el('summary',null,box);
+    const windows=new Map();for(const s of r.stops)for(const id of s.orderReleaseIds){const w=windowText(data.orders?.[id]?.timeWindow);if(w!=null)windows.set(w,(windows.get(w)||0)+1);}
+    const common=[...windows].sort((a,b)=>b[1]-a[1])[0]?.[0]??null;
+    const h=el('div',null,sum,'rd-head');el('span',null,h,'dot');el('h3',r.routeId+' · '+r.vehicleTypeName,h);
+    el('div',(r.departureTime?'出仓 '+short(r.departureTime)+' → 完成 '+short(r.completionTime)+'　':'')+'距离 '+fmt(r.totalDistance)+'　停靠 '+fmt(r.physicalStopCount)+' 次 · '+dnCount(r)+' DN　站点计数 '+fmt(r.siteCount)+(data.request?.maxSiteQty?' / '+data.request.maxSiteQty:'')+'（'+countMode(data.request?.lonAndLatCombination)+'）'+(common!=null?'　时间窗 '+common:''),sum,'rd-meta');
+    const ld=el('div',null,sum,'loads');
     for(const l of loads(r)){const d=el('div',null,ld),row=el('div',null,d,'load-row');el('span',l.label,row);el('b',fmt(l.used)+' / '+fmt(l.cap)+(l.ratio==null?'':'　'+fmt(l.ratio*100,1)+'%'),row);if(l.ratio!=null)el('i',null,el('div',null,d,'meter')).style.width=Math.min(100,l.ratio*100)+'%';}
     const table=el('table',null,el('div',null,box,'table-scroll')),head=el('tr',null,el('thead',null,table));
     ['#','站点 / DN','距上站','行驶','开始卸货（eta）','离开','等待','卸货'].forEach(s=>el('th',s,head));
     const body=el('tbody',null,table);
     r.stops.forEach((s,j)=>{const tr=el('tr',null,body);tr.dataset.route=i;tr.dataset.stop=j;el('span',j+1,el('td',null,tr),'seq');
       const td=el('td',null,tr);el('b',s.siteCode,td);el('span','　'+s.orderReleaseIds.length+' DN',td,'small muted');
-      for(const id of s.orderReleaseIds){const o=data.orders?.[id]||{},w=o.timeWindow,line=el('div',null,td,'dn');el('b',id,line);line.append('　体积 '+fmt(o.totalGrossVolume)+' · 重量 '+fmt(o.totalGrossWeight)+(Array.isArray(w)?' · 窗口 '+(w.length?w.join(' → '):'空'):''));}
-      el('td',fmt(s.legDistance),tr,'num');el('td',s.legDurationSeconds==null?'—':fmt(s.legDurationSeconds/60,1)+' 分',tr,'num');el('td',s.arrivalTime,tr,'num');el('td',s.departureTime,tr,'num');
+      for(const id of s.orderReleaseIds){const o=data.orders?.[id]||{},w=windowText(o.timeWindow),line=el('div',null,td,'dn');el('b',id,line);line.append('　体积 '+fmt(o.totalGrossVolume)+' · 重量 '+fmt(o.totalGrossWeight)+(w!=null&&w!==common?' · 窗口 '+w:''));}
+      el('td',fmt(s.legDistance),tr,'num');el('td',s.legDurationSeconds==null?'—':fmt(s.legDurationSeconds/60,1)+' 分',tr,'num');timeCell(s.arrivalTime,tr);timeCell(s.departureTime,tr);
       el('td',fmt(s.waitingBeforeArrivalSeconds/60,1)+' 分',tr,'num');el('td',fmt(s.unloadingSeconds/60,1)+' 分',tr,'num');});
   });
+  syncDetailsToggle();
 }
 
 // 矩阵按当前筛选的路线排序：仓库、路线上的 DN 依次排列，使经过的边落在对角线上方；
@@ -453,6 +485,8 @@ function matrix(){
   for(const a of points){const tr=el('tr',null,body);label(el('th',null,tr),a);const row=values[index.get(a)];
     for(const b of points){const v=row[index.get(b)],td=el('td',null,tr);
       if(a===b){td.textContent='—';td.className='diag';continue;}
+      // 开放路线不返仓，到仓库的边缺失属正常情况，不按缺失告警。
+      if(v==null&&b===depot){td.textContent='—';td.className='diag';td.title='开放路线不返仓';continue;}
       if(v==null){td.textContent='缺';td.className='miss';td.title=a+' → '+b+' 矩阵中缺失';continue;}
       td.textContent=byDuration?fmt(v/60,1):fmt(v);td.title=a+' → '+b;if(edges.has(a+'\u0000'+b))td.className='on-route';if(pickedIds.has(a)||pickedIds.has(b))td.classList.add('picked');}}
   // 地图上点中的站点在矩阵内滚动到可见位置；只滚动矩阵容器，不带动整页。
@@ -461,8 +495,9 @@ function matrix(){
   if(col)box.scrollLeft=Math.max(0,col.offsetLeft-table.tHead.rows[0].cells[0].offsetWidth);
 }
 // 是否显示矩阵按浏览器记住；存储不可用时默认关闭。
-function showMatrix(on){$('matrix-card').hidden=!on;document.querySelector('.grid').classList.toggle('with-matrix',on);$('matrix-toggle').setAttribute('aria-pressed',String(on));try{localStorage.setItem('dn-router.matrix',on?'1':'');}catch{}if(data)matrix();}
-$('matrix-toggle').onclick=()=>showMatrix($('matrix-card').hidden);$('matrix-close').onclick=()=>showMatrix(false);
+function showMatrix(on){$('matrix-card').hidden=!on;$('matrix-toggle').setAttribute('aria-pressed',String(on));try{localStorage.setItem('dn-router.matrix',on?'1':'');}catch{}if(data)matrix();}
+// 矩阵在地图下方展开，手动打开时滚动到可见位置。
+$('matrix-toggle').onclick=()=>{const on=$('matrix-card').hidden;showMatrix(on);if(on)$('matrix-card').scrollIntoView({block:'nearest',behavior:'smooth'});};$('matrix-close').onclick=()=>showMatrix(false);
 $('matrix-filter').oninput=matrix;$('matrix-metric').onchange=matrix;
 try{showMatrix(localStorage.getItem('dn-router.matrix')==='1');}catch{}
 
