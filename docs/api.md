@@ -3,7 +3,7 @@
 调用方式有三种，入参相同：
 
 - Python：`solve(payload, time_limit_ms=200)`，返回完整报告（见[完整报告](#完整报告)）。
-- CLI：`dn-router input.json [--time-limit-ms N] [--output FILE] [--report] [--html FILE]`。
+- CLI：`dn-router input.json [--time-limit-ms N] [--output FILE] [--report]`。
   默认 stdout 只输出路线数组，诊断写到 stderr；`--report` 时 stdout 输出完整报告。
 - HTTP（`dn-router serve`）：`POST /api/solve?time_limit_ms=`，请求体为请求 JSON，响应中 `output` 为完整报告。
 

@@ -10,12 +10,16 @@ import socket
 import sys
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from importlib.resources import files
 from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlsplit
 
 from .cli import solve_text
-from .visualization import dumps, render_page, report_data
+from .visualization import dumps, report_data
+
+# 页面模板包含样式、结构和交互脚本，数据全部通过接口获取。
+_PAGE = files(__package__).joinpath("report.html")
 
 # 列目录时跳过的目录，避免把虚拟环境和缓存里的 JSON 混进候选列表。
 _SKIPPED_DIRS = frozenset({"node_modules", "__pycache__", "build", "dist"})
@@ -60,7 +64,11 @@ class _Handler(BaseHTTPRequestHandler):
         url = urlsplit(self.path)
         query = parse_qs(url.query)
         if url.path == "/":
-            self._send(HTTPStatus.OK, render_page(None), "text/html; charset=utf-8")
+            self._send(
+                HTTPStatus.OK,
+                _PAGE.read_text(encoding="utf-8"),
+                "text/html; charset=utf-8",
+            )
         elif url.path == "/api/files":
             self._json(
                 HTTPStatus.OK,

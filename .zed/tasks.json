@@ -9,24 +9,6 @@
     "allow_concurrent_runs": false
   },
   {
-    "label": "DN Router：运行示例并生成 HTML 报告",
-    "command": "mkdir -p .zed/output && .venv/bin/python -m dn_router examples/input-multi.json --time-limit-ms 1000 --report --output .zed/output/result.json --html .zed/output/result.html",
-    "cwd": "$ZED_WORKTREE_ROOT",
-    "reveal": "always",
-    "hide": "never",
-    "save": "all",
-    "allow_concurrent_runs": false
-  },
-  {
-    "label": "DN Router：运行当前 JSON 并生成 HTML 报告",
-    "command": "mkdir -p .zed/output && .venv/bin/python -m dn_router \"$ZED_FILE\" --time-limit-ms 1000 --report --output .zed/output/result.json --html .zed/output/result.html",
-    "cwd": "$ZED_WORKTREE_ROOT",
-    "reveal": "always",
-    "hide": "never",
-    "save": "all",
-    "allow_concurrent_runs": false
-  },
-  {
     "label": "DN Router：运行全部测试",
     "command": ".venv/bin/python -m pytest -q",
     "cwd": "$ZED_WORKTREE_ROOT",

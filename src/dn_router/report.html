@@ -149,7 +149,6 @@ dialog textarea{display:block;width:100%;height:50vh;border:0;border-top:1px sol
 <div class="drop" id="drop" hidden>松开以上传并求解</div>
 <div class="toast" id="toast" hidden></div>
 
-<script type="application/json" id="report-data">__REPORT_DATA__</script>
 <script>
 'use strict';
 // 业务文本统一通过 textContent 写入，避免作为 HTML 执行。
@@ -433,7 +432,5 @@ function startOnline(){
   loadFiles(file).then(()=>{if(file)runFile(file);else $('welcome').hidden=false;}).catch(err=>{$('welcome').hidden=false;toast('读取文件列表失败：'+err.message);});
 }
 
-// 离线报告直接渲染嵌入数据；嵌入 null 时由在线服务提供数据。
-const embedded=JSON.parse($('report-data').textContent);
-if(embedded)render(embedded);else startOnline();
+startOnline();
 </script></body></html>

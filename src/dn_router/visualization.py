@@ -1,12 +1,10 @@
-"""整理求解结果的展示数据，并渲染为自包含的离线 HTML 或供在线服务使用。"""
+"""整理求解结果的展示数据，供在线可视化服务使用。"""
 
 import json
 import math
 from datetime import datetime, timedelta
 from decimal import Decimal
-from importlib.resources import files
 from collections.abc import Mapping
-from pathlib import Path
 from typing import Any
 
 from .models import Request
@@ -14,9 +12,6 @@ from .problem import Problem, gc_paused
 
 Json = dict[str, Any]
 Coordinate = list[float]
-
-# 模板包含样式、页面结构和交互脚本；离线报告通过占位符嵌入数据，在线服务嵌入 null。
-_TEMPLATE = files(__package__).joinpath("report.html")
 
 
 def _timeline(routes: list[Json]) -> Json | None:
@@ -255,43 +250,3 @@ def dumps(value: Any) -> str:
         allow_nan=False,
         default=lambda v: float(v) if isinstance(v, Decimal) else str(v),
     )
-
-
-def render_page(data: Json | None) -> str:
-    """把数据嵌入页面模板；data 为 None 时页面以在线服务模式启动。"""
-    encoded = dumps(data)
-    # 嵌入前转义 HTML 特殊字符，防止数据提前闭合 script 标签。
-    for char, escaped in (("&", "\\u0026"), ("<", "\\u003c"), (">", "\\u003e")):
-        encoded = encoded.replace(char, escaped)
-    return _TEMPLATE.read_text(encoding="utf-8").replace("__REPORT_DATA__", encoded)
-
-
-def render_html(payload: Json, result: Mapping[str, Any]) -> str:
-    """直接嵌入数据与前端资源，生成无需联网的报告。
-
-    Args:
-        payload: 原始请求 JSON 对象，同 report_data()。
-        result: solve() 返回的结果对象。
-
-    Returns:
-        完整 HTML 文本。
-
-    Raises:
-        与 report_data() 相同。
-    """
-    return render_page(report_data(payload, result))
-
-
-def write_html(payload: Json, result: Mapping[str, Any], path: str | Path) -> None:
-    """以 UTF-8 保存完整离线报告，页面无需额外资源文件。
-
-    Args:
-        payload: 原始请求 JSON 对象，同 report_data()。
-        result: solve() 返回的结果对象。
-        path: 输出文件路径，已存在时覆盖。
-
-    Raises:
-        OSError: 写文件失败。
-        其余同 report_data()。
-    """
-    Path(path).write_text(render_html(payload, result), encoding="utf-8")

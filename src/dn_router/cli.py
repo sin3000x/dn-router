@@ -1,4 +1,4 @@
-# 命令行入口：读取请求、求解，并分别输出业务路线、诊断信息及离线报告；serve 子命令启动在线可视化服务。
+# 命令行入口：读取请求、求解，并分别输出业务路线与诊断信息；serve 子命令启动在线可视化服务。
 import argparse
 import json
 import sys
@@ -7,7 +7,6 @@ from pathlib import Path
 from typing import Any
 
 from .solver import Result, solve
-from .visualization import write_html
 
 FAILURE_STATUSES = frozenset({"INVALID_INPUT", "INFEASIBLE_INPUT"})
 
@@ -41,9 +40,6 @@ def _parser() -> argparse.ArgumentParser:
         "--report",
         action="store_true",
         help="Output full status, errors and routing report",
-    )
-    parser.add_argument(
-        "--html", help="Write a self-contained offline HTML visualization"
     )
     return parser
 
@@ -86,15 +82,6 @@ def main(argv: list[str] | None = None) -> int:
         return serve_main(argv[1:])
     parser = _parser()
     args = parser.parse_args(argv)
-    # 先检查输出路径，防止 HTML 覆盖输入文件或 JSON 结果。
-    if args.html:
-        html = Path(args.html).resolve()
-        others = [
-            p for p in (None if args.input == "-" else args.input, args.output) if p
-        ]
-        if any(html == Path(p).resolve() for p in others):
-            parser.error("--html must differ from the input and JSON output paths")
-
     try:
         raw = (
             sys.stdin.read()
@@ -102,10 +89,9 @@ def main(argv: list[str] | None = None) -> int:
             else Path(args.input).read_text(encoding="utf-8")
         )
     except (ValueError, OSError) as error:
-        payload: Any = {}
         result = _invalid_input(error)
     else:
-        payload, result = solve_text(raw, args.time_limit_ms)
+        _, result = solve_text(raw, args.time_limit_ms)
 
     # 默认 stdout 只交付路线数组，诊断写入 stderr；--report 输出完整报告。
     if not args.report:
@@ -122,9 +108,6 @@ def main(argv: list[str] | None = None) -> int:
     else:
         print(text, end="")
 
-    # 即使输入不可行也生成状态报告；非对象输入不传入可视化字段解析。
-    if args.html:
-        write_html(payload if isinstance(payload, dict) else {}, result, args.html)
     if result["status"] == "SOLVER_ERROR":
         return 1
     return 2 if result["status"] in FAILURE_STATUSES else 0

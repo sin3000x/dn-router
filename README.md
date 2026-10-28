@@ -30,7 +30,7 @@ DN 体积 100 > 最大容积 65，应返回 `INFEASIBLE_INPUT`，不是成功漏
 
 ### 在线服务（推荐远程开发使用）
 
-在服务器上启动可视化服务，浏览器里选择请求文件即可求解并查看，不用再下载 HTML：
+在服务器上启动可视化服务，浏览器里选择请求文件即可求解并查看：
 
 ```bash
 uv run dn-router serve --dir examples          # 默认监听 0.0.0.0:8787
@@ -47,33 +47,25 @@ uv run dn-router serve --dir examples          # 默认监听 0.0.0.0:8787
 接口：`GET /api/files`，`GET /api/solve?file=<相对路径>&time_limit_ms=`，
 `POST /api/solve?time_limit_ms=`（请求体为请求 JSON）；求解接口返回报告数据，`output` 为原始结果。
 
-### 离线 HTML 报告
+### 报告内容
 
-生成无需联网、可直接用浏览器打开的 HTML 报告：
-
-```bash
-uv run dn-router examples/input-multi.json --time-limit-ms 1000 --report --output result.json --html result.html
-open result.html  # macOS
-```
-
-在线页面与离线报告使用同一模板，浅色 / 深色跟随系统。报告包含汇总指标、可切换的车辆路线、体积/重量装载率、停靠顺序、到离站时间、等待与卸货时长，以及异常订单和告警。路线图支持以指针为中心的滚轮缩放、拖动和重置。
+页面浅色 / 深色跟随系统。报告包含汇总指标、可切换的车辆路线、体积/重量装载率、停靠顺序、到离站时间、等待与卸货时长，以及异常订单和告警。路线图支持以指针为中心的滚轮缩放、拖动和重置。
 
 - **时间轴播放**：播放/暂停（空格键）、回到起点、拖动时间，以及每秒推进 1/5/15/60 分钟的速度选择。时间范围覆盖所有车辆；筛选路线保留当前时间。
 - **车辆甘特图**：每车一行，按行驶、等待、卸货分段；点击色块暂停播放并切换到该路线及该阶段起点。色块悬浮提示包含起止时间和持续分钟数。
 - **地图联动**：车辆方形标记随时间移动，当前行驶路段加粗，已走实线、未走虚线；等待和卸货时显示状态，并高亮停靠明细。路线结束自动显示“已完成”，全局播放到终点自动暂停，再次播放从起点开始。
 
 行驶位置按矩阵耗时沿直线插值；为演示采用“先行驶后等待”的分段方式，把等待标记放在目的站附近并注明“位置示意”。这不是实际等待地点或 GPS 轨迹。零时长阶段不扩造持续时间；无有效时间表时禁用播放。跨日时间仍采用业务当地时刻，不按浏览器时区换算。
-经纬度按直线连接，仅作位置与顺序示意，不代表真实道路；总距离保留业务矩阵单位，不自动标成公里。重合坐标不偏移，停靠明细仍逐项展示；缺失或同站不一致的坐标不连线。无路线或输入不可行时也会生成状态报告。
+经纬度按直线连接，仅作位置与顺序示意，不代表真实道路；总距离保留业务矩阵单位，不自动标成公里。重合坐标不偏移，停靠明细仍逐项展示；缺失或同站不一致的坐标不连线。无路线或输入不可行时也会显示状态报告。
 
 报告依据 `siteDetails[].eta`（开始卸货时间）和输入矩阵重建显示用停靠与时间分段，同站只计一次卸货；公开 JSON 输出协议保持不变。
 
 Python 调用（保留原始输入以关联坐标与车型容量）：
 
 ```python
-from dn_router import report_data, solve, write_html
+from dn_router import report_data, solve
 
 result = solve(payload, time_limit_ms=1000)
-write_html(payload, result, "result.html")
 data = report_data(payload, result)  # 页面所用的 JSON 数据
 ```
 
@@ -100,7 +92,7 @@ data = report_data(payload, result)  # 页面所用的 JSON 数据
 - `initial.py`：有界可行初解构造。
 - `reduce.py`：车辆数优先时的路线消除阶段；阶段列表见 `solver._seed_stages`，新增阶段只需在此挂接。
 - `solver.py`：OR-Tools 模型与输出。
-- `visualization.py` + `report.html`：离线 HTML 报告的数据组装与页面模板。
+- `visualization.py` + `report.html`：可视化报告的数据组装与页面模板。
 - `cli.py`：命令行；`server.py`：在线可视化服务。
 - `schemas/request.schema.json`：生成的 JSON Schema。
 - `scripts/benchmark.py`：合成数据基准。
