@@ -31,6 +31,11 @@ main{max-width:1480px;margin:auto;padding:20px 24px 40px}
 .tools{display:flex;gap:6px;align-items:center}
 
 /* 汇总指标。 */
+/* 请求参数：关键入参回显与分组口径说明。 */
+.params{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px 20px;margin:0}.params div{min-width:0}.params dt{font-size:12px;color:var(--muted)}.params dd{margin:2px 0 0;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}.params dd .faint{font-size:12px}
+.rules{margin:14px 0 0;padding:10px 12px;border-radius:8px;background:var(--surface-2);font-size:12px;color:var(--muted);display:flex;flex-direction:column;gap:2px}.rules b{color:var(--text);font-weight:600}
+.vehicle-list{display:flex;flex-wrap:wrap;gap:6px;margin-top:12px;font-size:12px}.vehicle-list span{padding:2px 8px;border-radius:6px;background:var(--surface-2);color:var(--muted)}.vehicle-list b{color:var(--text);font-weight:500}
+details.card{margin-bottom:16px}details.card>summary{cursor:pointer;list-style:none}details.card>summary::-webkit-details-marker{display:none}details.card>summary h2:before{content:'▸ ';color:var(--faint)}details.card[open]>summary h2:before{content:'▾ '}details.card:not([open])>summary{border-bottom:0}
 .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:16px}.stat{padding:14px 16px}.stat .label{font-size:12px;color:var(--muted)}.stat .value{font-size:24px;font-weight:600;margin-top:4px;letter-spacing:-.02em;font-variant-numeric:tabular-nums}.stat .unit{font-size:12px;color:var(--faint);margin-left:4px;font-weight:400}
 
 /* 路线列表与地图并排。 */
@@ -73,7 +78,7 @@ main{max-width:1480px;margin:auto;padding:20px 24px 40px}
 .loads{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px 24px;margin-bottom:12px;max-width:640px}.load-row{display:flex;justify-content:space-between;font-size:12px;color:var(--muted);margin-bottom:6px}.load-row b{color:var(--text);font-weight:500;font-variant-numeric:tabular-nums}.loads .meter{height:6px}
 .table-scroll{overflow:auto;border:1px solid var(--line);border-radius:8px}
 table{width:100%;border-collapse:collapse;font-size:13px;white-space:nowrap}th,td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--line)}tr:last-child td{border-bottom:0}th{font-size:12px;font-weight:500;color:var(--muted);background:var(--surface-2)}
-td .sub{font-size:12px;color:var(--muted)}tr.active td{background:var(--accent-soft)}.seq{display:inline-grid;place-items:center;width:20px;height:20px;border-radius:50%;background:var(--c);color:#fff;font-size:11px;font-weight:600}
+td .sub{font-size:12px;color:var(--muted)}td .dn{font-size:12px;color:var(--muted)}td .dn b{font-weight:500;color:var(--text)}tr.active td{background:var(--accent-soft)}.seq{display:inline-grid;place-items:center;width:20px;height:20px;border-radius:50%;background:var(--c);color:#fff;font-size:11px;font-weight:600}
 
 .notices{display:flex;flex-direction:column;gap:10px;margin-top:16px}.notice{padding:12px 16px;border-radius:10px;font-size:13px;background:var(--surface-2);overflow-wrap:anywhere}.notice strong{display:block;margin-bottom:4px}.notice.bad{background:var(--bad-soft)}.notice.bad strong{color:var(--bad)}.notice.warn{background:var(--warn-soft)}.notice.warn strong{color:var(--warn)}.notice div{white-space:pre-wrap}
 footer{margin-top:20px;font-size:12px;color:var(--faint);display:flex;gap:16px;flex-wrap:wrap}
@@ -114,10 +119,11 @@ dialog textarea{display:block;width:100%;height:50vh;border:0;border-top:1px sol
 
 <div id="report" hidden>
 <section class="stats" id="metrics" aria-label="求解汇总"></section>
+<details class="card" id="request-card" open><summary class="card-head"><div><h2>请求参数</h2><div class="sub" id="request-sub"></div></div></summary><div class="card-body"><dl class="params" id="params"></dl><div class="vehicle-list" id="vehicle-list"></div><div class="rules" id="rules"></div></div></details>
 
 <div class="grid">
 <aside class="card"><div class="card-head"><div><h2>车辆与路线</h2><div class="sub" id="route-count"></div></div></div><div class="route-list" id="routes"></div></aside>
-<section class="card map-card"><div class="card-head"><div><h2>路线示意</h2><div class="sub">滚轮缩放 · 拖动平移 · 数字为停靠顺序</div></div>
+<section class="card map-card"><div class="card-head"><div><h2>路线示意</h2><div class="sub">滚轮缩放 · 拖动平移 · 数字为停靠顺序，同坐标多站显示为 1·2</div></div>
 <div class="tools"><button class="btn icon" type="button" id="zoom-in" aria-label="放大">+</button><button class="btn icon" type="button" id="zoom-out" aria-label="缩小">−</button><button class="btn" type="button" id="reset">重置</button></div></div>
 <svg id="map" viewBox="0 0 960 520" role="img" aria-label="按经纬度绘制的配送路线"></svg>
 <div class="map-foot"><span>经纬度直线示意，不代表道路；开放路线止于末站，不绘制返仓。车辆位置按时间插值。</span><span class="warn" id="mapnote"></span></div>
@@ -181,7 +187,7 @@ function render(d){
   $('status').className='pill '+(status==='FEASIBLE'?'ok':/INVALID|INFEASIBLE|ERROR/.test(status)?'bad':'warn');
   $('task').textContent=result.taskNo||'';$('task').title=result.taskNo||'';
   document.title=(result.taskNo?result.taskNo+' · ':'')+'DN Router';
-  metrics();routeList();notices();footer();
+  metrics();requestInfo();routeList();notices();footer();
   $('slider').max=String(total);
   for(const id of ['play','restart','slider','speed'])$(id).disabled=!timeline||total<=0;
   select(-1);
@@ -192,6 +198,38 @@ function metrics(){
   for(const [label,value,unit,digits]of [['已服务 DN',result.servedOrderCount],['使用车辆',result.vehicleCount],['总距离',result.totalDistance,'业务单位'],['异常 DN',result.rejectedOrders?.length??0],['计算耗时',result.elapsedMs,'ms',0]]){
     const card=el('div',null,root,'card stat');el('div',label,card,'label');const v=el('div',fmt(value,digits),card,'value');if(unit)el('span',unit,v,'unit');
   }
+}
+
+// 站点计数口径与文档一致：0 按 siteCode，1 按六位小数坐标，2/null 按 DN。
+const COUNT_MODE={0:'按 siteCode 去重',1:'按经纬度（6 位小数）去重'};
+const countMode=m=>COUNT_MODE[m]??'按 DN 计数（每个 DN 记 1 站）';
+const QUOTATION={city:'车辆数 → 总距离 → 车型',zipCode:'车辆数 → 总距离 → 车型',province:'车辆数 → 总距离 → 车型'};
+const shown=v=>v==null||v===''?null:v;
+
+// 回显关键入参，缺省值标注“默认”，避免把缺省误读为请求里显式给出。
+function requestInfo(){
+  const q=data.request||{},root=$('params');root.replaceChildren();
+  const timed=q.earliestShippingDate!=null;
+  $('request-sub').textContent=fmt(q.dnCount)+' DN · '+fmt(q.siteCodeCount)+' 个 siteCode · '+fmt(data.vehicles.length)+' 种车型 · 矩阵 '+fmt(q.legCount)+' 条边';
+  const item=(label,value,fallback)=>{const d=el('div',null,root);el('dt',label,d);const dd=el('dd',shown(value)??'',d);if(shown(value)==null)el('span',fallback,dd,'faint');};
+  item('仓库',q.sourceLocation,'—');
+  item('最早出仓',q.earliestShippingDate,'未给出：旧版请求，不考虑时间');
+  item('最晚出仓',q.latestShippingDate,'不限');
+  if(timed){item('卸货时长',q.unloadingTime==null?null:fmt(q.unloadingTime*60,1)+' 分钟 / 次停靠','默认 0');
+    item('启用时间窗',q.enableTimeWindows==null?null:(q.enableTimeWindows?'是':'否'),'默认 是');}
+  item('每车站点上限',q.maxSiteQty?q.maxSiteQty+' 站':null,'不限');
+  item('站点计数口径',q.lonAndLatCombination==null?null:q.lonAndLatCombination+'：'+countMode(q.lonAndLatCombination),'null：'+countMode(null));
+  item('站间单段距离上限',Number(q.siteDistanceLimit)>0?fmt(q.siteDistanceLimit):null,'不限');
+  item('站间距离 ≤ 首段',q.distanceLessThanFirstLeg==null?null:(q.distanceLessThanFirstLeg?'是':'否'),'默认 否');
+  item('报价模式 / 目标',shown(q.quotationModel)==null?null:q.quotationModel+'：'+(QUOTATION[q.quotationModel]||'总距离 → 车型'),'默认：总距离 → 车型');
+  item('目的国',q.destCountryCode3,'—');
+  const vl=$('vehicle-list');vl.replaceChildren();
+  for(const v of data.vehicles){const s=el('span',null,vl);el('b',v.vehicleTypeName,s);s.append(' 容积 '+fmt(v.totalVolume)+' · 载重 '+fmt(v.totalWeight));}
+  const rules=$('rules');rules.replaceChildren();
+  const rule=(title,text)=>{const d=el('div',null,rules);el('b',title+'：',d);d.append(text);};
+  rule('卸货停靠','同一辆车上 siteCode 相同的 DN 合并为一次连续停靠，共用开始卸货时间，只计一次卸货时长；明细表每行是一次停靠');
+  rule('站点计数',countMode(q.lonAndLatCombination)+(q.maxSiteQty?'，每车不超过 '+q.maxSiteQty+' 站':'，不限站数')+'；只用于站数上限，不影响停靠合并');
+  rule('车型','每条路线取装得下体积与重量的最小车型，车型数量不限');
 }
 
 // 装载率使用输入车型容量；容量缺失时只显示用量。
@@ -250,11 +288,15 @@ function draw(){
       }
       prev=s.coordinate;prevIsDepot=false;
     });
-    r.stops.forEach((s,j)=>{if(!s.coordinate)return;const [x,y]=xy(s.coordinate),g=sv('g',{},nodes);
-      sv('circle',{cx:x,cy:y,r:11,fill:c,stroke:'var(--surface)','stroke-width':2.5},g);const n=sv('text',{x,y:y+4,'text-anchor':'middle',class:'num'},g);n.textContent=j+1;
-      sv('title',{},g).textContent=r.routeId+' · 第 '+(j+1)+' 站 · '+s.siteCode+'\n'+s.orderReleaseIds.join(', ')+'\n开始卸货 '+s.arrivalTime;
-      if(showLabels){const key=s.coordinate.join(','),slot=labelSlots.get(key)||0;labelSlots.set(key,slot+1);const t=sv('text',{x:x+16,y:y+4-slot*16},g);t.textContent=(selected<0?r.routeId+'·':'')+s.siteCode;}
-    });
+    // 同一路线多个停靠坐标相同时合并成一个标记，序号写成 1·2，避免后画的站把前一站盖住；站名按序号自上而下排列。
+    const marks=new Map();
+    r.stops.forEach((s,j)=>{if(!s.coordinate)return;const key=s.coordinate.join(',');if(!marks.has(key))marks.set(key,[]);marks.get(key).push([s,j]);});
+    for(const group of marks.values()){
+      const [x,y]=xy(group[0][0].coordinate),g=sv('g',{},nodes),label=group.map(([,j])=>j+1).join('·'),w=Math.max(22,label.length*7+10);
+      sv('rect',{x:x-w/2,y:y-11,width:w,height:22,rx:11,fill:c,stroke:'var(--surface)','stroke-width':2.5},g);const n=sv('text',{x,y:y+4,'text-anchor':'middle',class:'num'},g);n.textContent=label;
+      sv('title',{},g).textContent=group.map(([s,j])=>r.routeId+' · 第 '+(j+1)+' 站 · '+s.siteCode+'\n'+s.orderReleaseIds.join(', ')+(s.arrivalTime?'\n开始卸货 '+s.arrivalTime:'')).join('\n\n');
+      if(showLabels)for(const [s,j]of group){const key=s.coordinate.join(','),slot=labelSlots.get(key)||0;labelSlots.set(key,slot+1);const t=sv('text',{x:x+w/2+6,y:y+4+slot*16},g);t.textContent=(selected<0?r.routeId+' ':'')+'#'+(j+1)+' '+s.siteCode;}
+    }
   });
   if(data.depot.coordinate){const [x,y]=xy(data.depot.coordinate),g=sv('g',{},nodes);sv('rect',{x:x-9,y:y-9,width:18,height:18,rx:4,fill:'var(--text)',stroke:'var(--surface)','stroke-width':2.5,transform:`rotate(45 ${x} ${y})`},g);const t=sv('text',{x:x+18,y:y+4,class:'strong'},g);t.textContent='仓库 '+data.depot.name;}
   // 车辆位置由时间轴插值，等待时只显示目的站附近的示意位置；未出发与已完成不画车辆。
@@ -355,14 +397,15 @@ function details(){
   visible().forEach(({r,i})=>{
     const box=el('article',null,root,'route-detail');box.style.setProperty('--c',color(i));
     const h=el('div',null,box,'rd-head');el('span',null,h,'dot');el('h3',r.routeId+' · '+r.vehicleTypeName,h);
-    el('div',(r.departureTime?'出仓 '+r.departureTime+' → 完成 '+r.completionTime+'　':'')+'距离 '+fmt(r.totalDistance)+'　站点计数 '+fmt(r.siteCount)+'　实际停靠 '+fmt(r.physicalStopCount),box,'rd-meta');
+    el('div',(r.departureTime?'出仓 '+r.departureTime+' → 完成 '+r.completionTime+'　':'')+'距离 '+fmt(r.totalDistance)+'　实际停靠 '+fmt(r.physicalStopCount)+' 次（按 siteCode 合并）　站点计数 '+fmt(r.siteCount)+(data.request?.maxSiteQty?' / '+data.request.maxSiteQty:'')+'（'+countMode(data.request?.lonAndLatCombination)+'）',box,'rd-meta');
     const ld=el('div',null,box,'loads');
     for(const l of loads(r)){const d=el('div',null,ld),row=el('div',null,d,'load-row');el('span',l.label,row);el('b',fmt(l.used)+' / '+fmt(l.cap)+(l.ratio==null?'':'　'+fmt(l.ratio*100,1)+'%'),row);if(l.ratio!=null)el('i',null,el('div',null,d,'meter')).style.width=Math.min(100,l.ratio*100)+'%';}
     const table=el('table',null,el('div',null,box,'table-scroll')),head=el('tr',null,el('thead',null,table));
     ['#','站点 / DN','开始卸货（eta）','离开','等待','卸货'].forEach(s=>el('th',s,head));
     const body=el('tbody',null,table);
     r.stops.forEach((s,j)=>{const tr=el('tr',null,body);tr.dataset.route=i;tr.dataset.stop=j;el('span',j+1,el('td',null,tr),'seq');
-      const td=el('td',s.siteCode,tr);el('div',s.orderReleaseIds.join(' / '),td,'sub');el('td',s.arrivalTime,tr,'num');el('td',s.departureTime,tr,'num');
+      const td=el('td',null,tr);el('b',s.siteCode,td);el('span','　'+s.orderReleaseIds.length+' DN',td,'small muted');
+      for(const id of s.orderReleaseIds){const o=data.orders?.[id]||{},w=o.timeWindow,line=el('div',null,td,'dn');el('b',id,line);line.append('　体积 '+fmt(o.totalGrossVolume)+' · 重量 '+fmt(o.totalGrossWeight)+(Array.isArray(w)?' · 窗口 '+(w.length?w.join(' → '):'空'):''));}el('td',s.arrivalTime,tr,'num');el('td',s.departureTime,tr,'num');
       el('td',fmt(s.waitingBeforeArrivalSeconds/60,1)+' 分',tr,'num');el('td',fmt(s.unloadingSeconds/60,1)+' 分',tr,'num');});
   });
 }

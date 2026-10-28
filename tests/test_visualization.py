@@ -58,6 +58,40 @@ def test_malformed_input_collections_and_nonfinite_values():
         {"status": "INVALID_INPUT", "routes": []},
     )
     assert data["vehicles"][0]["totalVolume"] is None
+    assert data["request"]["dnCount"] == 0 and data["orders"] == {}
+
+
+# 页面回显关键入参与逐 DN 明细；缺省字段保留为 null，由页面说明默认值。
+def test_request_summary_and_order_details():
+    payload = {
+        "sourceLocation": "WH",
+        "lonAndLatCombination": 0,
+        "maxSiteQty": 2,
+        "unloadingTime": Decimal("0.5"),
+        "dnSiteVoList": [
+            {"orderReleaseId": "A", "siteCode": "S1", "totalGrossVolume": 1},
+            {"orderReleaseId": "B", "siteCode": "S1", "timeWindow": []},
+            {"orderReleaseId": "C", "siteCode": "S2"},
+        ],
+        "allPathDistanceVoList": [{}, {}],
+    }
+    data = report_data(payload, {"status": "INVALID_INPUT", "routes": []})
+    request = data["request"]
+    assert request["sourceLocation"] == "WH" and request["unloadingTime"] == 0.5
+    assert request["lonAndLatCombination"] == 0 and request["maxSiteQty"] == 2
+    assert request["earliestShippingDate"] is None
+    assert (request["dnCount"], request["siteCodeCount"], request["legCount"]) == (
+        3,
+        2,
+        2,
+    )
+    assert data["orders"]["A"] == {
+        "siteCode": "S1",
+        "totalGrossVolume": 1,
+        "totalGrossWeight": None,
+        "timeWindow": None,
+    }
+    assert data["orders"]["B"]["timeWindow"] == []
 
 
 @pytest.mark.parametrize("report", [False, True])

@@ -4,7 +4,7 @@ import json
 import math
 from datetime import datetime, timedelta
 from decimal import Decimal
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from typing import Any
 
 from .models import Request
@@ -206,6 +206,37 @@ def _finite(value: Any) -> Any:
     return value
 
 
+_ORDER_FIELDS = ("siteCode", "totalGrossVolume", "totalGrossWeight", "timeWindow")
+
+# 影响求解口径的顶层参数，原样回显；缺省字段显示为 null，由页面说明默认值。
+_REQUEST_FIELDS = (
+    "taskNo",
+    "sourceLocation",
+    "earliestShippingDate",
+    "latestShippingDate",
+    "unloadingTime",
+    "enableTimeWindows",
+    "maxSiteQty",
+    "lonAndLatCombination",
+    "siteDistanceLimit",
+    "distanceLessThanFirstLeg",
+    "quotationModel",
+    "destCountryCode3",
+)
+
+
+def _request_summary(payload: Json, records: Callable[[str], list[Json]]) -> Json:
+    """回显请求的关键参数和规模，帮助核对求解口径。"""
+    return {
+        **{key: payload.get(key) for key in _REQUEST_FIELDS},
+        "dnCount": len(records("dnSiteVoList")),
+        "siteCodeCount": len(
+            {d.get("siteCode") for d in records("dnSiteVoList")} - {None}
+        ),
+        "legCount": len(records("allPathDistanceVoList")),
+    }
+
+
 def report_data(payload: Json, result: Mapping[str, Any]) -> Json:
     """组装页面所需的路线、坐标、车型与时间轴数据，结果可直接严格 JSON 序列化。
 
@@ -214,7 +245,8 @@ def report_data(payload: Json, result: Mapping[str, Any]) -> Json:
         result: solve() 返回的结果对象。
 
     Returns:
-        包含 result（路线已改为按实际停靠展示）、depot、vehicles、timeline 的字典。
+        包含 result（路线已改为按实际停靠展示）、depot、vehicles、request（关键入参）、
+        orders（逐 DN 明细）、timeline 的字典。
 
     Raises:
         ValueError: 结果含路线但请求无法重新校验，或路线时间与权威矩阵不一致。
@@ -267,6 +299,11 @@ def report_data(payload: Json, result: Mapping[str, Any]) -> Json:
             ),
         },
         "vehicles": records("vehicleTypeVoList"),
+        "request": _request_summary(payload, records),
+        # 停靠明细逐 DN 展示体积、重量和时间窗，只取页面用到的字段。
+        "orders": {
+            dn: {k: order.get(k) for k in _ORDER_FIELDS} for dn, order in orders.items()
+        },
         "timeline": _timeline(routes),
     }
     # 往返一次统一数值类型，在线服务可直接再次序列化。
