@@ -4,7 +4,7 @@ from time import perf_counter
 from test_solver import case
 
 from dn_router.models import Request
-from dn_router.problem import Route, prepare, validate_routes
+from dn_router.problem import Problem, Route, validate_routes
 from dn_router.reduce import reduce_routes, vehicle_lower_bound
 from dn_router.solver import _seed_stages
 
@@ -13,7 +13,7 @@ def problem(n=6, max_site_qty=2, model="city"):
     payload = case(n)
     payload.update(maxSiteQty=max_site_qty, lonAndLatCombination=0)
     payload["quotationModel"] = model
-    return prepare(Request.model_validate(payload))
+    return Problem.from_request(Request.model_validate(payload))
 
 
 # 下界取站点数、体积、重量三者的最大值；maxSiteQty=0 时不计站点数。

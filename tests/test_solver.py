@@ -7,7 +7,7 @@ import pytest
 
 from dn_router import solve
 from dn_router.models import Request, group_key
-from dn_router.problem import InputError, Route, prepare, validate_routes
+from dn_router.problem import InputError, Problem, Route, validate_routes
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -121,7 +121,7 @@ def test_unload_once_same_site_tight_window():
     details = r["routes"][0]["siteDetails"]
     assert len(details) == 2
     assert details[0]["eta"] == details[1]["eta"]
-    schedule = prepare(Request.model_validate(p)).schedule([1, 2])
+    schedule = Problem.from_request(Request.model_validate(p)).schedule([1, 2])
     assert schedule[0] == schedule[1]
     assert schedule[0][2] - schedule[0][1] == 1800
 
@@ -246,7 +246,7 @@ def test_distance_precedes_vehicle_count():
 
 # 独立审计必须发现路线遗漏的有效 DN。
 def test_independent_validator_detects_omission():
-    p = prepare(Request.model_validate(case(2)))
+    p = Problem.from_request(Request.model_validate(case(2)))
     with pytest.raises(InputError, match="omitted"):
         validate_routes(p, [Route([1], 0)])
 
@@ -311,7 +311,7 @@ def test_early_arrival_waits_and_outputs_service_start_only():
     }
     for detail in route["siteDetails"]:
         assert set(detail) == {"siteAddress", "eta"}
-    visits = prepare(Request.model_validate(p)).schedule([1, 2, 3])
+    visits = Problem.from_request(Request.model_validate(p)).schedule([1, 2, 3])
     assert visits[0][0] < visits[0][1]
 
 

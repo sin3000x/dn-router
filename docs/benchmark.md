@@ -132,7 +132,7 @@ OR-Tools 插入类算子（`filter_with_cp_solver=false`）产生的候选能通
 
 ## 输入校验与预处理提速（2026-10-28）
 
-300 DN 时矩阵约 9 万条，`Request.model_validate` + `prepare` 的 cProfile 热点：
+300 DN 时矩阵约 9 万条，`Request.model_validate` + `Problem.from_request` 的 cProfile 热点：
 
 - pydantic 逐条构造 `Leg` 实例（约占校验耗时的大半），其间分代 GC 反复扫描这 9 万个存活对象，
   却回收不到任何东西，约占这一步的 40%；

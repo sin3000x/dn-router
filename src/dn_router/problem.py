@@ -7,11 +7,12 @@
 """
 
 import gc
+import math
 from collections.abc import Iterable, Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime
-from decimal import ROUND_CEILING, Decimal
+from decimal import Decimal
 from itertools import groupby, pairwise
 from typing import NamedTuple
 
@@ -113,6 +114,50 @@ class Problem:
     unload_seconds: int
     rejected: list[dict[str, str]]
     warnings: list[str]
+
+    @classmethod
+    def from_request(cls, request: Request) -> "Problem":
+        """建立权威矩阵、筛除允许剔除的时间窗异常，并构造有限时间范围。"""
+        warnings: list[str] = []
+        edges = _edges(request, warnings)
+        dns, bounds, rejected = _eligible_dns(request, edges)
+        distance, duration = _matrices(request.sourceLocation, dns, edges, warnings)
+        # 以容积、载重、名称确定稳定车型等级，不假定容量互相嵌套。
+        vehicles = sorted(
+            request.vehicleTypeVoList,
+            key=lambda v: (v.totalVolume, v.totalWeight, v.vehicleTypeName),
+        )
+        # 小时换算成秒后向上取整，避免低估卸货占用时间。
+        unload_seconds = math.ceil(request.unloadingTime * 3600)
+
+        latest = request.latestShippingDate
+        latest_departure = _seconds(request, latest) if latest else 0
+
+        # 时间上界覆盖最晚窗口、全部可能行驶及卸货，允许无时间窗订单等待。
+        longest_leg = max(map(max, duration))
+        horizon = max([0, latest_departure, *(b[1] for b in bounds if b)])
+        horizon += len(distance) * (longest_leg + unload_seconds) + 1
+        if horizon >= LIMIT:
+            raise InputError("time range too large")
+        _check_load_precision(dns, vehicles)
+
+        unbounded = (0, horizon)
+        windows = [unbounded] + [
+            (max(0, b[0]), b[1]) if b else unbounded for b in bounds
+        ]
+        return cls(
+            request=request,
+            dns=dns,
+            vehicles=vehicles,
+            distance=distance,
+            duration=duration,
+            windows=windows,
+            horizon=horizon,
+            latest_departure=latest_departure if latest else horizon,
+            unload_seconds=unload_seconds,
+            rejected=rejected,
+            warnings=warnings,
+        )
 
     def dn(self, node: int) -> DN:
         return self.dns[node - 1]
@@ -223,52 +268,6 @@ def validate_routes(problem: Problem, routes: Iterable[Route]) -> None:
     # 保留的 DN 必须恰好出现一次，同时检查漏单和重复配送。
     if sorted(served) != list(range(1, len(problem.dns) + 1)):
         raise InputError("mandatory DN omitted or duplicated")
-
-
-def prepare(request: Request) -> Problem:
-    """建立权威矩阵、筛除允许剔除的时间窗异常，并构造有限时间范围。"""
-    warnings: list[str] = []
-    edges = _edges(request, warnings)
-    dns, bounds, rejected = _eligible_dns(request, edges)
-    distance, duration = _matrices(request.sourceLocation, dns, edges, warnings)
-    # 以容积、载重、名称确定稳定车型等级，不假定容量互相嵌套。
-    vehicles = sorted(
-        request.vehicleTypeVoList,
-        key=lambda v: (v.totalVolume, v.totalWeight, v.vehicleTypeName),
-    )
-
-    # 小时换算成整数秒后向上取整，避免低估卸货占用时间。
-    hours = request.unloadingTime * 3600
-    unload_seconds = int(hours.to_integral_value(rounding=ROUND_CEILING))
-
-    latest = request.latestShippingDate
-    latest_departure = _seconds(request, latest) if latest else 0
-
-    # 时间上界覆盖最晚窗口、全部可能行驶及卸货，允许无时间窗订单等待。
-    window_ends = [max(0, b[1]) for b in bounds if b]
-    longest_leg = max(map(max, duration), default=0)
-    horizon = max([0, latest_departure, *window_ends])
-    horizon += len(distance) * (longest_leg + unload_seconds) + 1
-    if horizon >= LIMIT:
-        raise InputError("time range too large")
-    _check_load_precision(dns, vehicles)
-
-    unbounded = (0, horizon)
-    windows = [unbounded] + [(max(0, b[0]), b[1]) if b else unbounded for b in bounds]
-
-    return Problem(
-        request=request,
-        dns=dns,
-        vehicles=vehicles,
-        distance=distance,
-        duration=duration,
-        windows=windows,
-        horizon=horizon,
-        latest_departure=latest_departure if latest else horizon,
-        unload_seconds=unload_seconds,
-        rejected=rejected,
-        warnings=warnings,
-    )
 
 
 def _seconds(request: Request, moment: datetime) -> int:

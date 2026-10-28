@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from .models import Request
-from .problem import gc_paused, prepare
+from .problem import Problem, gc_paused
 
 Json = dict[str, Any]
 Coordinate = list[float]
@@ -98,7 +98,7 @@ def _display_routes(payload: Json, routes: list[Json]) -> list[Json]:
         return routes
     with gc_paused():
         request = Request.model_validate(payload)
-        problem = prepare(request)
+        problem = Problem.from_request(request)
     orders = {dn.orderReleaseId: (node, dn) for node, dn in enumerate(problem.dns, 1)}
     converted = []
     for number, route in enumerate(routes, 1):

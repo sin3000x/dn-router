@@ -13,7 +13,7 @@ flowchart LR
 
 | 步骤 | 代码 | 时间预算 | 完成后的 `solutionSource` |
 |---|---|---|---|
-| 校验与预处理 | `models.py`、`problem.prepare` | — | |
+| 校验与预处理 | `models.py`、`Problem.from_request` | — | |
 | 逐单直送 | `solver.solve` | — | `direct_fallback` |
 | 插入法初解 | `initial.py` | 总预算 20% | `insertion_fallback` |
 | 路线消除 | `reduce.py` | 总预算 25% | `insertion_fallback` |
