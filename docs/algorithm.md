@@ -15,7 +15,7 @@ flowchart LR
 |---|---|---|---|
 | 校验与预处理 | `models.py`、`problem.prepare` | — | |
 | 逐单直送 | `solver.solve` | — | `direct_fallback` |
-| 插入法初解 | `initial.py` | 总预算 20%，最多 40ms | `insertion_fallback` |
+| 插入法初解 | `initial.py` | 总预算 20% | `insertion_fallback` |
 | 路线消除 | `reduce.py` | 总预算 25% | `insertion_fallback` |
 | OR-Tools 搜索 | `solver._RoutingModel` | 剩余全部 | `ortools` |
 | 独立审计 | `problem.validate_routes` | — | |

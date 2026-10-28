@@ -8,7 +8,6 @@
 from collections import defaultdict
 from collections.abc import Callable, Iterable
 from datetime import timedelta
-from math import inf
 from time import perf_counter
 from typing import Any, NamedTuple
 
@@ -35,27 +34,33 @@ Result = dict[str, Any]
 
 
 class Stage(NamedTuple):
-    """初解阶段：在总预算的 share 比例（不超过 cap 秒）内改进路线。
+    """初解阶段：在总预算的 share 比例内改进路线。
 
     Attributes:
         run: 阶段函数 (problem, 当前可行路线, deadline) -> 新的可行路线；
             deadline 是 perf_counter() 的绝对时刻（秒）。
         share: 本阶段可用的总预算比例。
-        cap: 本阶段可用时长上限，单位秒。
     """
 
     run: Callable[[Problem, list[Route], float], list[Route]]
     share: float
-    cap: float = inf
 
 
 def _seed_stages(request: Request) -> list[Stage]:
-    """按顺序执行的初解阶段；新增阶段只需在此挂接。"""
-    stages = [
-        Stage(lambda problem, _, end: build_initial_routes(problem, end), 0.2, 0.04)
-    ]
+    """按顺序执行的初解阶段；新增阶段只需在此挂接。
+
+    各阶段 share 都按总预算计算，剩余时间全部留给 OR-Tools 局部搜索。
+    """
+    # 插入法初解：总预算 20%。插入只扫一遍，多给时间只是让它跑完；
+    # 被截断的 DN 改为直送，车辆数后续几乎减不回来，所以不设绝对上限。
+    insertion = Stage(
+        run=lambda problem, _, end: build_initial_routes(problem, end),
+        share=0.2,
+    )
+    stages = [insertion]
     if request.count_first:
-        stages.append(Stage(reduce_routes, 0.25))
+        # 路线消除：总预算 25%，不设上限；仅车辆数优先模式启用。
+        stages.append(Stage(run=reduce_routes, share=0.25))
     return stages
 
 
@@ -120,7 +125,7 @@ def solve(payload: dict[str, Any], *, time_limit_ms: int = 200) -> Result:
 
     if nodes and perf_counter() < deadline:
         for stage in _seed_stages(request):
-            end = perf_counter() + min(stage.cap, budget * stage.share)
+            end = perf_counter() + budget * stage.share
             routes = stage.run(problem, routes, min(deadline, end))
         source = "insertion_fallback"
 
