@@ -90,6 +90,26 @@
     },
     "Leg": {
       "properties": {
+        "from": {
+          "title": "From",
+          "type": "string"
+        },
+        "to": {
+          "title": "To",
+          "type": "string"
+        },
+        "planDistance": {
+          "anyOf": [
+            {
+              "minimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "string"
+            }
+          ],
+          "title": "Plandistance"
+        },
         "beginSiteCode": {
           "anyOf": [
             {
@@ -113,26 +133,6 @@
           ],
           "default": null,
           "title": "Endsitecode"
-        },
-        "from": {
-          "title": "From",
-          "type": "string"
-        },
-        "to": {
-          "title": "To",
-          "type": "string"
-        },
-        "planDistance": {
-          "anyOf": [
-            {
-              "minimum": 0.0,
-              "type": "number"
-            },
-            {
-              "type": "string"
-            }
-          ],
-          "title": "Plandistance"
         },
         "duration": {
           "anyOf": [
