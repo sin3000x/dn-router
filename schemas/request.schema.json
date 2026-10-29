@@ -156,7 +156,7 @@
       "title": "Leg",
       "type": "object"
     },
-    "Vehicle": {
+    "VehicleType": {
       "properties": {
         "themeCode": {
           "anyOf": [
@@ -216,7 +216,7 @@
         "totalWeight",
         "vehicleTypeName"
       ],
-      "title": "Vehicle",
+      "title": "VehicleType",
       "type": "object"
     }
   },
@@ -394,7 +394,7 @@
     },
     "vehicleTypeVoList": {
       "items": {
-        "$ref": "#/$defs/Vehicle"
+        "$ref": "#/$defs/VehicleType"
       },
       "minItems": 1,
       "title": "Vehicletypevolist",

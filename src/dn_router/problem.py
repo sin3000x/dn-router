@@ -2,7 +2,7 @@
 
 内部约定：
 - 节点编号 0 为仓库，1..N 对应 Problem.dns 的下标加一；
-- 车型用 Problem.vehicles（已按等级从小到大排序）的下标表示；
+- 车型用 Problem.vehicle_types（已按等级从小到大排序）的下标表示；
 - 时间均为相对最早出仓时刻的整数秒；旧版不考虑时间的请求耗时、卸货均为零，
   时间窗不限。
 """
@@ -17,7 +17,7 @@ from decimal import Decimal
 from itertools import groupby, pairwise
 from typing import NamedTuple
 
-from .models import DN, Leg, Request, Vehicle
+from .models import DN, Leg, Request, VehicleType
 
 # 距离保留三位小数，载荷保留六位小数；范围上限为后续整数运算留余量。
 DIST_SCALE = 1000
@@ -40,11 +40,11 @@ class Route(NamedTuple):
 
     Attributes:
         nodes: 按访问顺序排列的 DN 节点编号（1..N），不含仓库。
-        vehicle: 车型在 Problem.vehicles 中的下标。
+        vehicle_type: 车型在 Problem.vehicle_types 中的下标。
     """
 
     nodes: list[int]
-    vehicle: int
+    vehicle_type: int
 
 
 class Visit(NamedTuple):
@@ -91,7 +91,7 @@ class Problem:
     Attributes:
         request: 原始请求。
         dns: 保留的 DN，dns[i - 1] 对应节点 i。
-        vehicles: 车型，按 (容积, 载重, 名称) 从小到大排序，下标即车型等级。
+        vehicle_types: 车型，按 (容积, 载重, 名称) 从小到大排序，下标即车型等级。
         distance: 距离矩阵 [from][to]，单位为输入距离 × DIST_SCALE 的整数；
             返仓边和同站 DN 之间为 0。
         duration: 行驶耗时矩阵 [from][to]，整数秒；返仓边和同站 DN 之间为 0。
@@ -106,7 +106,7 @@ class Problem:
 
     request: Request
     dns: list[DN]
-    vehicles: list[Vehicle]
+    vehicle_types: list[VehicleType]
     distance: Matrix
     duration: Matrix
     windows: list[Window]
@@ -130,7 +130,7 @@ class Problem:
             timed=request.timed,
         )
         # 以容积、载重、名称确定稳定车型等级，不假定容量互相嵌套。
-        vehicles = sorted(
+        vehicle_types = sorted(
             request.vehicleTypeVoList,
             key=lambda v: (v.totalVolume, v.totalWeight, v.vehicleTypeName),
         )
@@ -147,7 +147,7 @@ class Problem:
         horizon += len(distance) * (longest_leg + unload_seconds) + 1
         if horizon >= LIMIT:
             raise InputError("time range too large")
-        _check_load_precision(dns=dns, vehicles=vehicles)
+        _check_load_precision(dns=dns, vehicle_types=vehicle_types)
 
         unbounded = (0, horizon)
         windows = [unbounded] + [
@@ -156,7 +156,7 @@ class Problem:
         return cls(
             request=request,
             dns=dns,
-            vehicles=vehicles,
+            vehicle_types=vehicle_types,
             distance=distance,
             duration=duration,
             windows=windows,
@@ -174,15 +174,15 @@ class Problem:
         """开放路线长度：仓库到首站及站间路段，不计返仓。"""
         return sum(self.distance[a][b] for a, b in pairwise([DEPOT, *nodes]))
 
-    def fitting_vehicles(self, nodes: Iterable[int]) -> list[int]:
+    def fitting_types(self, nodes: Iterable[int]) -> list[int]:
         """同时装得下体积和重量的车型，按等级从小到大。"""
         dns = [self.dn(i) for i in nodes]
         volume = sum(d.totalGrossVolume for d in dns)
         weight = sum(d.totalGrossWeight for d in dns)
         return [
             k
-            for k, vehicle in enumerate(self.vehicles)
-            if volume <= vehicle.totalVolume and weight <= vehicle.totalWeight
+            for k, vehicle_type in enumerate(self.vehicle_types)
+            if volume <= vehicle_type.totalVolume and weight <= vehicle_type.totalWeight
         ]
 
     def schedule(self, nodes: Sequence[int]) -> list[Visit]:
@@ -225,7 +225,7 @@ class Problem:
 
     def admits(self, nodes: Sequence[int]) -> bool:
         """容量与站点数可行；二者与访问顺序无关。"""
-        return bool(self.fitting_vehicles(nodes)) and self.within_stop_limit(nodes)
+        return bool(self.fitting_types(nodes)) and self.within_stop_limit(nodes)
 
     def distinct_stops(self, nodes: Iterable[int]) -> int:
         """按请求的站点计数口径去重后的站点数。"""
@@ -266,10 +266,10 @@ class Problem:
 def validate_routes(problem: Problem, routes: Iterable[Route]) -> None:
     """独立审计所有输出，包括兜底方案；违规时抛错，禁止交付无效路线。"""
     served: list[int] = []
-    for nodes, vehicle in routes:
+    for nodes, vehicle_type in routes:
         if not nodes:
             raise InputError("empty route in output")
-        if vehicle not in problem.fitting_vehicles(nodes):
+        if vehicle_type not in problem.fitting_types(nodes):
             raise InputError("capacity violation")
         problem.check_route(nodes)
         served += nodes
@@ -376,11 +376,11 @@ def _matrices(
     return distance, duration
 
 
-def _check_load_precision(dns: list[DN], vehicles: list[Vehicle]) -> None:
+def _check_load_precision(dns: list[DN], vehicle_types: list[VehicleType]) -> None:
     """预先检查载荷精度，避免仅在进入某个求解分支后才发现非法数值。"""
     for dn in dns:
         scaled(value=dn.totalGrossVolume, scale=LOAD_SCALE)
         scaled(value=dn.totalGrossWeight, scale=LOAD_SCALE)
-    for vehicle in vehicles:
-        scaled(value=vehicle.totalVolume, scale=LOAD_SCALE)
-        scaled(value=vehicle.totalWeight, scale=LOAD_SCALE)
+    for vehicle_type in vehicle_types:
+        scaled(value=vehicle_type.totalVolume, scale=LOAD_SCALE)
+        scaled(value=vehicle_type.totalWeight, scale=LOAD_SCALE)

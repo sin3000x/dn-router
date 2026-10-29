@@ -48,7 +48,8 @@ def reduce_routes(
     if len(best) == len(routes):
         return routes
     return [
-        Route(nodes=nodes, vehicle=problem.fitting_vehicles(nodes)[0]) for nodes in best
+        Route(nodes=nodes, vehicle_type=problem.fitting_types(nodes)[0])
+        for nodes in best
     ]
 
 
@@ -58,8 +59,14 @@ def vehicle_lower_bound(problem: Problem) -> int:
     volume = sum(dn.totalGrossVolume for dn in dns)
     weight = sum(dn.totalGrossWeight for dn in dns)
     bounds = [
-        ceil(Fraction(volume) / Fraction(max(v.totalVolume for v in problem.vehicles))),
-        ceil(Fraction(weight) / Fraction(max(v.totalWeight for v in problem.vehicles))),
+        ceil(
+            Fraction(volume)
+            / Fraction(max(v.totalVolume for v in problem.vehicle_types))
+        ),
+        ceil(
+            Fraction(weight)
+            / Fraction(max(v.totalWeight for v in problem.vehicle_types))
+        ),
     ]
     if limit := problem.request.maxSiteQty:
         mode = problem.request.lonAndLatCombination

@@ -22,7 +22,7 @@ def build_initial_routes(problem: Problem, deadline: float) -> list[Route]:
     """
     routes: list[Route] = []
     for node in _sweep_order(problem):
-        direct = Route(nodes=[node], vehicle=problem.fitting_vehicles([node])[0])
+        direct = Route(nodes=[node], vehicle_type=problem.fitting_types([node])[0])
         best = _best_insertion(
             problem=problem, routes=routes, direct=direct, deadline=deadline
         )
@@ -63,12 +63,12 @@ def _best_insertion(
             break
         # 容量和站点数与插入位置无关，每条路线只检查一次。
         merged = [*route.nodes, node]
-        vehicles = problem.fitting_vehicles(merged)
-        if not vehicles or not problem.within_stop_limit(merged):
+        types = problem.fitting_types(merged)
+        if not types or not problem.within_stop_limit(merged):
             continue
         base = problem.length(route.nodes) + problem.length(direct.nodes)
         for nodes in problem.insertions(nodes=route.nodes, node=node):
-            merged_route = Route(nodes=nodes, vehicle=vehicles[0])
+            merged_route = Route(nodes=nodes, vehicle_type=types[0])
             delta = _delta(
                 problem=problem,
                 merged=merged_route,
@@ -87,7 +87,7 @@ def _delta(
     """合并后成本减去旧路线和直送路线成本；base 为两者距离之和。"""
     distance = problem.length(merged.nodes) - base
     # 每辆车的等级成本是车型下标加一，与求解器中的车辆固定成本一致。
-    rank = merged.vehicle - old.vehicle - direct.vehicle - 1
+    rank = merged.vehicle_type - old.vehicle_type - direct.vehicle_type - 1
     if problem.request.count_first:
         return (-1, distance, rank)
     return (distance, rank, 0)

@@ -33,7 +33,7 @@ JSON Schema 见 `schemas/request.schema.json`（由 `models.Request` 生成）�
 | `unloadingTime` | number ≥ 0 | 否 | 0 | 每次停靠的卸货时长，**单位小时**，换算秒后向上取整 |
 | `enableTimeWindows` | bool | 否 | true | false 时忽略全部 DN 时间窗 |
 | `dnSiteVoList` | DN[] | 是 | | 待配送 DN，可为空列表 |
-| `vehicleTypeVoList` | Vehicle[] | 是 | | 车型，至少一个；每种车型数量不限 |
+| `vehicleTypeVoList` | VehicleType[] | 是 | | 车型，至少一个；每种车型数量不限 |
 | `allPathDistanceVoList` | Leg[] | 是 | | 唯一权威的有向距离/耗时矩阵 |
 | `pathDistanceVoList` | Leg[] | 否 | [] | 兼容字段，只接收不使用；非空时给出警告 |
 | `maxSiteQty` | int ≥ 0 | 否 | 0 | 每车去重站点数上限，0 表示不限 |

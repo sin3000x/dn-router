@@ -69,7 +69,7 @@ class DN(BaseModel):
 
 
 # 车型容量必须为正；车型名称作为业务唯一标识，数量不设上限。
-class Vehicle(BaseModel):
+class VehicleType(BaseModel):
     themeCode: str | None = None
     totalVolume: Positive
     totalWeight: Positive
@@ -115,7 +115,7 @@ class Request(BaseModel):
     sourceLongitude: Longitude
     sourceLocation: str
     taskNo: str = ""
-    vehicleTypeVoList: list[Vehicle] = Field(min_length=1)
+    vehicleTypeVoList: list[VehicleType] = Field(min_length=1)
 
     @property
     def count_first(self) -> bool:

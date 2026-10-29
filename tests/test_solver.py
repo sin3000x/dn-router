@@ -298,7 +298,7 @@ def test_distance_precedes_vehicle_count():
 def test_independent_validator_detects_omission():
     p = Problem.from_request(Request.model_validate(case(2)))
     with pytest.raises(InputError, match="omitted"):
-        validate_routes(problem=p, routes=[Route(nodes=[1], vehicle=0)])
+        validate_routes(problem=p, routes=[Route(nodes=[1], vehicle_type=0)])
 
 
 # 求解流程产出无效路线时报告求解错误，不能伪装成输入无效或交付路线。
@@ -308,7 +308,7 @@ def test_audit_failure_is_solver_error(monkeypatch):
     monkeypatch.setattr(
         solver,
         "build_initial_routes",
-        lambda problem, deadline: [Route(nodes=[1], vehicle=0)],
+        lambda problem, deadline: [Route(nodes=[1], vehicle_type=0)],
     )
     r = solve(case(2))
     assert r["status"] == "SOLVER_ERROR" and r["routes"] == []

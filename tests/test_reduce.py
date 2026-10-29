@@ -25,7 +25,9 @@ def test_lower_bound():
 # 逐单直送的 6 条路线应被合并到下界，且通过独立审计。
 def test_merges_direct_routes_down_to_bound():
     p = problem()
-    direct = [Route(nodes=[i], vehicle=p.fitting_vehicles([i])[0]) for i in range(1, 7)]
+    direct = [
+        Route(nodes=[i], vehicle_type=p.fitting_types([i])[0]) for i in range(1, 7)
+    ]
     routes = reduce_routes(problem=p, routes=direct, deadline=perf_counter() + 1)
     assert len(routes) == vehicle_lower_bound(p) == 3
     validate_routes(problem=p, routes=routes)
@@ -35,9 +37,9 @@ def test_merges_direct_routes_down_to_bound():
 def test_noop_at_lower_bound():
     p = problem()
     routes = [
-        Route(nodes=[1, 2], vehicle=0),
-        Route(nodes=[3, 4], vehicle=0),
-        Route(nodes=[5, 6], vehicle=0),
+        Route(nodes=[1, 2], vehicle_type=0),
+        Route(nodes=[3, 4], vehicle_type=0),
+        Route(nodes=[5, 6], vehicle_type=0),
     ]
     assert (
         reduce_routes(problem=p, routes=routes, deadline=perf_counter() + 1) is routes
@@ -47,7 +49,9 @@ def test_noop_at_lower_bound():
 # 预算已耗尽时同样原样返回，不破坏现有方案。
 def test_expired_deadline_keeps_routes():
     p = problem()
-    direct = [Route(nodes=[i], vehicle=p.fitting_vehicles([i])[0]) for i in range(1, 7)]
+    direct = [
+        Route(nodes=[i], vehicle_type=p.fitting_types([i])[0]) for i in range(1, 7)
+    ]
     assert (
         reduce_routes(problem=p, routes=direct, deadline=perf_counter() - 1) is direct
     )
