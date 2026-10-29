@@ -7,7 +7,7 @@ name = "dn-router"
 version = "0.1.0"
 description = "Open-route delivery planning with mandatory DNs and unlimited heterogeneous vehicles"
 requires-python = ">=3.11"
-dependencies = ["ortools==9.15.6755", "pydantic>=2.10,<3"]
+dependencies = ["numpy>=2.4,<3", "ortools==9.15.6755", "pydantic>=2.10,<3"]
 
 [dependency-groups]
 dev = ["pytest>=8,<10"]
