@@ -2,9 +2,9 @@
 
 import json
 import math
+from collections.abc import Callable, Mapping
 from datetime import datetime, timedelta
 from decimal import Decimal
-from collections.abc import Callable, Mapping
 from typing import Any
 
 from .models import Request
