@@ -214,10 +214,10 @@ def solve(payload: dict[str, Any], *, time_limit_ms: int = 200) -> Result:
             return finish(**base, status="INVALID_INPUT", routes=[], errors=errors)
 
         build_started = perf_counter()
-        # 每车型槽位数取初解路线数：总槽位仍是初解车数的 K 倍，足够局部搜索拆分路线；
+        # 每车型预留的车辆数取初解路线数：总车辆数仍是初解车数的 K 倍，足够局部搜索拆分路线；
         # 距离优先若按 N 预留，100 单 6 车型的建模就会耗掉约 0.8 秒预算。
         model = _RoutingModel(
-            problem=problem, weights=weights, slots_per_type=len(routes)
+            problem=problem, weights=weights, vehicles_per_type=len(routes)
         )
         solution, solver_status, search_ms = model.search(
             initial=routes, deadline=deadline
@@ -324,22 +324,23 @@ class _ObjectiveWeights:
 class _RoutingModel:
     """OR-Tools 路由模型。
 
-    每种车型预留 slots_per_type 个车辆槽位，槽位按车型分块排列。
+    每种车型预留 vehicles_per_type 辆车，按车型分块排列；预留数只是建模手段，不是车源上限。
     节点 N+1 是虚拟终点，进出终点的距离和耗时为零，实现开放路线。
 
     术语：
         节点（node）：业务编号。0 是仓库，1..N 是 DN，N+1 是虚拟终点 sink。
         索引（index）：OR-Tools 内部编号。DN 的索引恰好等于节点号，但每辆车的
             起点和终点各有独立索引，都映射回仓库和 sink；求解器回调收到的是索引。
-        槽位（slot）：OR-Tools 里的一辆车（vehicle）。车辆数在建模时固定，
-            槽位本身没有开关：路线为空即未启用、不计固定成本，有节点即启用。
+        车辆（vehicle）：OR-Tools 里的一辆车，与其接口命名一致。车辆数在建模时固定，
+            车辆本身没有开关：路线为空即未启用、不计固定成本，有节点即启用。
+        车型（vehicle type）：一类车的容量规格，不是一辆车；每辆车属于某一车型。
 
     Attributes:
         problem: 归一化后的问题。
-        slots_per_type: 每种车型预留的槽位数，所有车型相同。
-        slot_types: 槽位下标 → 车型下标（problem.vehicle_types 的下标）。
-            车型 k 占连续区间 [k * slots_per_type, (k + 1) * slots_per_type)。
-        sink: 虚拟终点的节点号，等于 DN 数加一。所有槽位都以它为终点，
+        vehicles_per_type: 每种车型预留的车辆数，所有车型相同。
+        type_of_vehicle: 车辆下标 → 车型下标（problem.vehicle_types 的下标）。
+            车型 k 占连续区间 [k * vehicles_per_type, (k + 1) * vehicles_per_type)。
+        sink: 虚拟终点的节点号，等于 DN 数加一。所有车辆都以它为终点，
             进出它的距离和耗时为零，所以路线最后一个 DN 之后无需返仓。
         manager: 节点与索引的互转器。
         routing: OR-Tools 路由模型，持有 NextVar、VehicleVar 及各 Dimension。
@@ -348,21 +349,21 @@ class _RoutingModel:
     """
 
     def __init__(
-        self, problem: Problem, weights: _ObjectiveWeights, slots_per_type: int
+        self, problem: Problem, weights: _ObjectiveWeights, vehicles_per_type: int
     ) -> None:
         self.problem = problem
-        self.slots_per_type = slots_per_type
-        # 按车型分块展开：[0,0,0, 1,1,1, ...]，下标是槽位、值是该槽位的车型。
-        self.slot_types = [
+        self.vehicles_per_type = vehicles_per_type
+        # 按车型分块展开：[0,0,0, 1,1,1, ...]，下标是车辆、值是该车辆的车型。
+        self.type_of_vehicle = [
             vehicle_type
             for vehicle_type in range(len(problem.vehicle_types))
-            for _ in range(slots_per_type)
+            for _ in range(vehicles_per_type)
         ]
-        slots = len(self.slot_types)
+        vehicles = len(self.type_of_vehicle)
         self.sink = len(problem.dns) + 1
-        # 节点数含仓库和 sink；所有槽位同起点（仓库）、同终点（sink）。
+        # 节点数含仓库和 sink；所有车辆同起点（仓库）、同终点（sink）。
         self.manager = pywrapcp.RoutingIndexManager(
-            self.sink + 1, slots, [DEPOT] * slots, [self.sink] * slots
+            self.sink + 1, vehicles, [DEPOT] * vehicles, [self.sink] * vehicles
         )
         self.routing = pywrapcp.RoutingModel(self.manager)
         self.solver = self.routing.solver()
@@ -387,7 +388,7 @@ class _RoutingModel:
         """从可行初解启动引导局部搜索，每个耗时阶段结束后重算剩余预算。
 
         Args:
-            initial: 可行初解，每条路线的车型下标决定放入哪一块槽位。
+            initial: 可行初解，每条路线的车型下标决定放入哪一块车辆。
             deadline: 截止时刻，perf_counter() 的绝对值（秒），不是剩余时长。
 
         Returns:
@@ -399,7 +400,7 @@ class _RoutingModel:
         params = _search_parameters(_remaining_ms(deadline))
         self.routing.CloseModelWithParameters(params)
         assignment = self.routing.ReadAssignmentFromRoutes(
-            self._slot_routes(initial), True
+            self._vehicle_routes(initial), True
         )
         remaining = _remaining_ms(deadline)
         if not assignment or remaining <= 0:
@@ -414,8 +415,8 @@ class _RoutingModel:
     def routes(self, solution: Any) -> list[Route]:
         """读取非空路线，并为每条路线选最小可行车型。"""
         routes: list[Route] = []
-        for slot in range(len(self.slot_types)):
-            index, nodes = self.routing.Start(slot), []
+        for vehicle in range(len(self.type_of_vehicle)):
+            index, nodes = self.routing.Start(vehicle), []
             while not self.routing.IsEnd(index):
                 if node := self.node_of[index]:
                     nodes.append(node)
@@ -428,14 +429,14 @@ class _RoutingModel:
                 )
         return routes
 
-    def _slot_routes(self, routes: Iterable[Route]) -> list[list[int]]:
-        """把业务路线放进对应车型的槽位，未用槽位保留为空。"""
-        slots: list[list[int]] = [[] for _ in self.slot_types]
+    def _vehicle_routes(self, routes: Iterable[Route]) -> list[list[int]]:
+        """把业务路线放进对应车型的车辆，未用的车辆保留为空路线。"""
+        vehicles: list[list[int]] = [[] for _ in self.type_of_vehicle]
         used = [0] * len(self.problem.vehicle_types)
         for nodes, vehicle_type in routes:
-            slots[vehicle_type * self.slots_per_type + used[vehicle_type]] = nodes
+            vehicles[vehicle_type * self.vehicles_per_type + used[vehicle_type]] = nodes
             used[vehicle_type] += 1
-        return slots
+        return vehicles
 
     # ---- 节点工具 ----
 
@@ -446,13 +447,13 @@ class _RoutingModel:
     def _is_dn(self, node: int) -> bool:
         return DEPOT < node < self.sink
 
-    def _slot_of(self, node: int) -> Any:
-        """整数变量：node 由哪个槽位配送（OR-Tools 的 VehicleVar，即槽位下标）。"""
+    def _vehicle_of(self, node: int) -> Any:
+        """整数变量：node 由哪辆车配送（OR-Tools 的 VehicleVar，值是车辆下标）。"""
         return self.routing.VehicleVar(self._index(node))
 
-    def _on_slot(self, node: int, slot: int) -> Any:
-        """布尔变量：node 是否由车辆槽位 slot 配送。"""
-        return self.solver.IsEqualCstVar(self._slot_of(node), slot)
+    def _on_vehicle(self, node: int, vehicle: int) -> Any:
+        """布尔变量：node 是否由车辆 vehicle 配送。"""
+        return self.solver.IsEqualCstVar(self._vehicle_of(node), vehicle)
 
     def _register_arcs(self, arc: Callable[[int, int], int]) -> int:
         """把按节点号定义的弧函数 arc(i, j) 预先算成矩阵，注册为二元回调。
@@ -499,15 +500,17 @@ class _RoutingModel:
             lambda i, j: self._distance(i=i, j=j) * weights.distance_weight
         )
         routing.SetArcCostEvaluatorOfAllVehicles(cost)
-        for slot, vehicle_type in enumerate(self.slot_types):
-            routing.SetFixedCostOfVehicle(weights.per_vehicle + vehicle_type + 1, slot)
+        for vehicle, vehicle_type in enumerate(self.type_of_vehicle):
+            routing.SetFixedCostOfVehicle(
+                weights.per_vehicle + vehicle_type + 1, vehicle
+            )
 
     def _add_capacities(self) -> None:
-        """体积和重量各一个容量维度；每个槽位绑定其车型的两项容量。
+        """体积和重量各一个容量维度；每辆车绑定其车型的两项容量。
 
         一元回调给出离开该节点时累加的需求，所以路线终点的累计值就是整车总载荷，
         容量上限约束的是它。AddDimensionWithVehicleCapacity 的参数依次是：
-        回调、松弛上限（0 表示不松弛）、逐槽位容量、起点累计值是否固定为 0、名称。
+        回调、松弛上限（0 表示不松弛）、逐车辆容量、起点累计值是否固定为 0、名称。
         """
         problem = self.problem
         for name, demand_field, capacity_field in (
@@ -525,7 +528,7 @@ class _RoutingModel:
                     value=getattr(problem.vehicle_types[vehicle_type], capacity_field),
                     scale=LOAD_SCALE,
                 )
-                for vehicle_type in self.slot_types
+                for vehicle_type in self.type_of_vehicle
             ]
             callback = self._register_nodes(demand)
             self.routing.AddDimensionWithVehicleCapacity(
@@ -540,8 +543,8 @@ class _RoutingModel:
         time = routing.GetDimensionOrDie("Time")
         for node in range(1, self.sink):
             time.CumulVar(self._index(node)).SetRange(*problem.windows[node])
-        for slot in range(len(self.slot_types)):
-            time.CumulVar(routing.Start(slot)).SetRange(0, problem.latest_departure)
+        for vehicle in range(len(self.type_of_vehicle)):
+            time.CumulVar(routing.Start(vehicle)).SetRange(0, problem.latest_departure)
 
     def _add_shared_site_blocks(self) -> None:
         """同车同站的 DN 必须连续停靠并共用 eta。
@@ -562,7 +565,7 @@ class _RoutingModel:
         routing.AddDimension(step, 0, n + 1, True, "Position")
         position = routing.GetDimensionOrDie("Position")
         timed = problem.request.timed
-        slots = range(len(self.slot_types))
+        vehicles = range(len(self.type_of_vehicle))
 
         def order(node: int) -> Any:
             return position.CumulVar(self._index(node))
@@ -571,16 +574,16 @@ class _RoutingModel:
             return routing.GetDimensionOrDie("Time").CumulVar(self._index(node))
 
         for group in shared:
-            on_slot = [
-                solver.Sum([self._on_slot(node=i, slot=s) for i in group]).Var()
-                for s in slots
+            on_vehicle = [
+                solver.Sum([self._on_vehicle(node=i, vehicle=v) for i in group]).Var()
+                for v in vehicles
             ]
             for i in group:
-                same_site_count = solver.Element(on_slot, self._slot_of(i))
+                same_site_count = solver.Element(on_vehicle, self._vehicle_of(i))
                 for j in group:
                     if i == j:
                         continue
-                    same = solver.IsEqualVar(self._slot_of(i), self._slot_of(j))
+                    same = solver.IsEqualVar(self._vehicle_of(i), self._vehicle_of(j))
                     solver.Add(
                         order(i) - order(j) <= same_site_count - 1 + n * (1 - same)
                     )
@@ -606,9 +609,9 @@ class _RoutingModel:
             routing.AddDimension(count, 0, request.maxSiteQty, True, "StopCount")
             return
 
-        for slot in range(len(self.slot_types)):
+        for vehicle in range(len(self.type_of_vehicle)):
             visited = [
-                solver.Max([self._on_slot(node=i, slot=slot) for i in group])
+                solver.Max([self._on_vehicle(node=i, vehicle=vehicle) for i in group])
                 for group in groups.values()
             ]
             solver.Add(solver.Sum(visited) <= request.maxSiteQty)
