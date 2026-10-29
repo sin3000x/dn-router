@@ -299,12 +299,22 @@ class _ObjectiveWeights:
     """用全局上界构造严格词典序权重：高优先级的一单位超过所有低优先级成本。
 
     目标从高到低：车辆数（仅车辆数优先模式）、总距离、车型等级之和。
+    总成本 = 总距离 * distance_weight + 各启用车辆的固定成本之和，
+    固定成本 = per_vehicle + 车型等级（见 _RoutingModel._add_cost）。
+
+    Attributes:
+        max_distance: 总距离上界：每条路线最多 N 段，每段不超过最长边。
+        distance_weight: 距离的权重。大于所有车型等级之和的上界，所以多 1 个距离单位
+            总比任何车型升降都重要。
+        per_vehicle: 每启用一辆车的固定成本。车辆数优先时大于其余成本之和，
+            少一辆车总是更优；距离优先时为 0。
+        overflows: 最坏情况的总成本是否超出 int64 安全范围；为真时无法建模。
     """
 
     def __init__(self, problem: Problem) -> None:
         n, k = len(problem.dns), len(problem.vehicle_types)
         self.max_distance = n * max(map(max, problem.distance))
-        max_rank = n * k
+        max_rank = n * k  # 车型等级之和的上界：N 辆车，每辆最高等级 K
         self.distance_weight = max_rank + 1
         max_cost = self.max_distance * self.distance_weight + max_rank
         self.per_vehicle = max_cost + 1 if problem.request.count_first else 0
@@ -316,6 +326,25 @@ class _RoutingModel:
 
     每种车型预留 slots_per_type 个车辆槽位，槽位按车型分块排列。
     节点 N+1 是虚拟终点，进出终点的距离和耗时为零，实现开放路线。
+
+    术语：
+        节点（node）：业务编号。0 是仓库，1..N 是 DN，N+1 是虚拟终点 sink。
+        索引（index）：OR-Tools 内部编号。DN 的索引恰好等于节点号，但每辆车的
+            起点和终点各有独立索引，都映射回仓库和 sink；求解器回调收到的是索引。
+        槽位（slot）：OR-Tools 里的一辆车（vehicle）。车辆数在建模时固定，
+            槽位本身没有开关：路线为空即未启用、不计固定成本，有节点即启用。
+
+    Attributes:
+        problem: 归一化后的问题。
+        slots_per_type: 每种车型预留的槽位数，所有车型相同。
+        slot_types: 槽位下标 → 车型下标（problem.vehicle_types 的下标）。
+            车型 k 占连续区间 [k * slots_per_type, (k + 1) * slots_per_type)。
+        sink: 虚拟终点的节点号，等于 DN 数加一。所有槽位都以它为终点，
+            进出它的距离和耗时为零，所以路线最后一个 DN 之后无需返仓。
+        manager: 节点与索引的互转器。
+        routing: OR-Tools 路由模型，持有 NextVar、VehicleVar 及各 Dimension。
+        solver: routing 内部的旧版 CP 求解器，用于加 Dimension 表达不了的约束。
+        node_of: 索引 → 节点号，供回调把收到的索引转回节点。
     """
 
     def __init__(
@@ -323,6 +352,7 @@ class _RoutingModel:
     ) -> None:
         self.problem = problem
         self.slots_per_type = slots_per_type
+        # 按车型分块展开：[0,0,0, 1,1,1, ...]，下标是槽位、值是该槽位的车型。
         self.slot_types = [
             vehicle_type
             for vehicle_type in range(len(problem.vehicle_types))
@@ -330,6 +360,7 @@ class _RoutingModel:
         ]
         slots = len(self.slot_types)
         self.sink = len(problem.dns) + 1
+        # 节点数含仓库和 sink；所有槽位同起点（仓库）、同终点（sink）。
         self.manager = pywrapcp.RoutingIndexManager(
             self.sink + 1, slots, [DEPOT] * slots, [self.sink] * slots
         )
@@ -409,12 +440,14 @@ class _RoutingModel:
     # ---- 节点工具 ----
 
     def _index(self, node: int) -> int:
+        """节点号 → 索引。仅用于 DN；仓库和 sink 是起点终点，用 Start/End 取。"""
         return self.manager.NodeToIndex(node)
 
     def _is_dn(self, node: int) -> bool:
         return DEPOT < node < self.sink
 
     def _slot_of(self, node: int) -> Any:
+        """整数变量：node 由哪个槽位配送（OR-Tools 的 VehicleVar，即槽位下标）。"""
         return self.routing.VehicleVar(self._index(node))
 
     def _on_slot(self, node: int, slot: int) -> Any:
@@ -422,7 +455,13 @@ class _RoutingModel:
         return self.solver.IsEqualCstVar(self._slot_of(node), slot)
 
     def _register_arcs(self, arc: Callable[[int, int], int]) -> int:
-        """把按节点编号定义的弧成本预先算成矩阵，再注册为求解器回调。"""
+        """把按节点号定义的弧函数 arc(i, j) 预先算成矩阵，注册为二元回调。
+
+        回调在搜索中被频繁调用，每次都要跨过 C++ 与 Python 的边界，所以只做查表。
+
+        Returns:
+            回调编号，供 Dimension 和弧成本引用。
+        """
         nodes = range(self.sink + 1)
         matrix = [[arc(i, j) for j in nodes] for i in nodes]
         node_of = self.node_of
@@ -431,10 +470,12 @@ class _RoutingModel:
         )
 
     def _register_nodes(self, value: Callable[[int], int]) -> int:
+        """注册一元回调：值只取决于离开的节点 value(node)，与去向无关（如需求量）。"""
         values = [value(node) for node in self.node_of]
         return self.routing.RegisterUnaryTransitCallback(lambda a: values[a])
 
     def _distance(self, i: int, j: int) -> int:
+        """节点 i 到 j 的距离（已缩放为整数）；进出 sink 为零，开放路线不返仓。"""
         return 0 if self.sink in (i, j) else self.problem.distance[i][j]
 
     def _travel_and_unload(self, i: int, j: int) -> int:
@@ -449,6 +490,10 @@ class _RoutingModel:
     # ---- 约束 ----
 
     def _add_cost(self, weights: _ObjectiveWeights) -> None:
+        """目标函数：弧成本 = 距离 * 距离权重；固定成本只在该车非空时计入。
+
+        固定成本的车型等级部分让大车比小车贵，同等条件下优先用小车型。
+        """
         routing = self.routing
         cost = self._register_arcs(
             lambda i, j: self._distance(i=i, j=j) * weights.distance_weight
@@ -458,7 +503,12 @@ class _RoutingModel:
             routing.SetFixedCostOfVehicle(weights.per_vehicle + vehicle_type + 1, slot)
 
     def _add_capacities(self) -> None:
-        """体积和重量各一个容量维度；每个槽位绑定其车型的两项容量。"""
+        """体积和重量各一个容量维度；每个槽位绑定其车型的两项容量。
+
+        一元回调给出离开该节点时累加的需求，所以路线终点的累计值就是整车总载荷，
+        容量上限约束的是它。AddDimensionWithVehicleCapacity 的参数依次是：
+        回调、松弛上限（0 表示不松弛）、逐槽位容量、起点累计值是否固定为 0、名称。
+        """
         problem = self.problem
         for name, demand_field, capacity_field in (
             ("Volume", "totalGrossVolume", "totalVolume"),
@@ -564,6 +614,7 @@ class _RoutingModel:
             solver.Add(solver.Sum(visited) <= request.maxSiteQty)
 
     def _add_distance_limits(self) -> None:
+        """两类距离约束：站间单段距离上限，以及站间距离之和不超过首段。"""
         problem, routing = self.problem, self.routing
         request = problem.request
 
@@ -599,6 +650,15 @@ class _RoutingModel:
 
 
 def _search_parameters(time_limit_ms: float) -> Any:
+    """搜索参数。
+
+    初解由调用方通过 ReadAssignmentFromRoutes 导入，first_solution_strategy
+    只在导入失败时才有意义；引导式局部搜索（GLS）用来跳出局部最优。
+    use_full_propagation 让约束传播更彻底，代价是建模和每步评估更慢。
+
+    Args:
+        time_limit_ms: 搜索时限（毫秒），至少为 1。
+    """
     params = pywrapcp.DefaultRoutingSearchParameters()
     strategy = routing_enums_pb2.FirstSolutionStrategy
     metaheuristic = routing_enums_pb2.LocalSearchMetaheuristic
