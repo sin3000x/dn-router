@@ -2,7 +2,7 @@
 
 日期：2026-10-26。运行环境：macOS 本地机器，Intel Core i5-1038NG7（8 线程），Python 3.12.13，
 OR-Tools 9.15.6755。机器未独占（测试期间 load average 约 4–5），不能外推为生产性能承诺。
-当前依赖由 uv.lock 管理。
+依赖见 pyproject.toml。
 
 41 项 pytest 回归测试通过，包括一次卸货、同站时间窗交集、同站分车、
 三种计数口径、四舍五入、开放路线、非嵌套车型容量、两种目标、硬距离约束、
@@ -51,7 +51,7 @@ OR-Tools 9.15.6755。机器未独占（测试期间 load average 约 4–5），
 
 复现：
 ```bash
-uv run python scripts/benchmark.py --dn 100 --runs 5 --time-limit-ms 200 500 1000 3000 10000
+python scripts/benchmark.py --dn 100 --runs 5 --time-limit-ms 200 500 1000 3000 10000
 ```
 
 ## 路线消除阶段（车辆数优先）

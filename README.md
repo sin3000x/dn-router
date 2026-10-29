@@ -7,13 +7,15 @@
 ## 快速启动
 
 ```bash
-uv sync --locked
-uv run dn-router examples/input-multi.json --time-limit-ms 1000
-uv run pytest -q
-uv run python scripts/benchmark.py --dn 100 --runs 5 --time-limit-ms 200
+python3 -m venv .venv && source .venv/bin/activate   # Python 3.11+
+pip install -e . "pytest>=8,<10"                     # 只运行求解时不需要 pytest
+dn-router examples/input-multi.json --time-limit-ms 1000
+pytest -q
+python scripts/benchmark.py --dn 100 --runs 5 --time-limit-ms 200
 ```
 
-也支持 `uv run python -m dn_router input.json`、stdin (`input` 为 `-`) 和 `--output result.json`。
+也支持 `python -m dn_router input.json`、stdin (`input` 为 `-`) 和 `--output result.json`。
+用 uv 的话，把上面的安装换成 `uv sync`，命令前加 `uv run` 即可；仓库不提交 `uv.lock`。
 Python 调用：
 
 ```python
@@ -33,7 +35,7 @@ DN 体积 100 > 最大容积 65，应返回 `INFEASIBLE_INPUT`，不是成功漏
 在服务器上启动可视化服务，浏览器里选择请求文件即可求解并查看：
 
 ```bash
-uv run dn-router serve --dir examples          # 默认监听 0.0.0.0:8787
+dn-router serve --dir examples          # 默认监听 0.0.0.0:8787
 ```
 
 - 页面列出 `--dir` 下的全部 `*.json`（最近修改的在前，跳过隐藏目录），也可上传、粘贴或直接拖入 JSON。
@@ -107,9 +109,12 @@ data = report_data(payload, result)  # 页面所用的 JSON 数据
 ```bash
 git clone https://github.com/sin3000x/dn-router.git
 cd dn-router
-uv sync --locked
-uv run pytest -q
+python3 -m venv .venv && source .venv/bin/activate
+pip install -e . "pytest>=8,<10"
+pytest -q
 ```
 
-依赖由 `pyproject.toml` 和 `uv.lock` 管理。使用 `uv sync --locked` 安装，生产使用 `uv sync --locked --no-dev`。新增依赖使用 `uv add`，开发依赖使用 `uv add --dev`。Python 默认版本由 `.python-version` 指定。
+依赖声明在 `pyproject.toml`：运行依赖在 `dependencies`，开发依赖（pytest）在 `[dependency-groups] dev`。
+新增依赖直接改 `pyproject.toml`。生产环境用 `pip install .`。`.python-version` 是开发默认的 Python 版本。
+`uv.lock` 和 `uv.toml` 在 `.gitignore` 中（内网镜像会改写锁文件里的源地址），不作为依赖管理依据。
 
