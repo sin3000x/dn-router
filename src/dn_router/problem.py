@@ -120,10 +120,14 @@ class Problem:
     def from_request(cls, request: Request) -> "Problem":
         """建立权威矩阵、筛除允许剔除的时间窗异常，并构造有限时间范围。"""
         warnings: list[str] = []
-        edges = _edges(request, warnings)
-        dns, bounds, rejected = _eligible_dns(request, edges)
+        edges = _edges(request=request, warnings=warnings)
+        dns, bounds, rejected = _eligible_dns(request=request, edges=edges)
         distance, duration = _matrices(
-            request.sourceLocation, dns, edges, warnings, timed=request.timed
+            depot=request.sourceLocation,
+            dns=dns,
+            edges=edges,
+            warnings=warnings,
+            timed=request.timed,
         )
         # 以容积、载重、名称确定稳定车型等级，不假定容量互相嵌套。
         vehicles = sorted(
@@ -135,7 +139,7 @@ class Problem:
         unload_seconds = math.ceil(request.unloadingTime * 3600) if request.timed else 0
 
         latest = request.latestShippingDate
-        latest_departure = _seconds(request, latest) if latest else 0
+        latest_departure = _seconds(request=request, moment=latest) if latest else 0
 
         # 时间上界覆盖最晚窗口、全部可能行驶及卸货，允许无时间窗订单等待。
         longest_leg = max(map(max, duration))
@@ -143,7 +147,7 @@ class Problem:
         horizon += len(distance) * (longest_leg + unload_seconds) + 1
         if horizon >= LIMIT:
             raise InputError("time range too large")
-        _check_load_precision(dns, vehicles)
+        _check_load_precision(dns=dns, vehicles=vehicles)
 
         unbounded = (0, horizon)
         windows = [unbounded] + [
@@ -205,7 +209,7 @@ class Problem:
             if any(start > self.windows[i][1] for i in stop):
                 raise InputError("route time window violation")
             finish = start + self.unload_seconds
-            visits += [Visit(arrival, start, finish)] * len(stop)
+            visits += [Visit(arrival=arrival, start=start, finish=finish)] * len(stop)
             time, previous = finish, stop[-1]
         return visits
 
@@ -318,7 +322,7 @@ def _eligible_dns(
     for dn in request.dnSiteVoList:
         window = dn.timeWindow if request.timed and request.enableTimeWindows else None
         if window == [] or (window and window[0] > window[1]):
-            reject(dn, "EMPTY_TIME_WINDOW")
+            reject(dn=dn, code="EMPTY_TIME_WINDOW")
             continue
 
         path = (request.sourceLocation, dn.orderReleaseId)
@@ -329,9 +333,12 @@ def _eligible_dns(
         bound = None
         if window:
             assert edge.duration is not None
-            bound = (_seconds(request, window[0]), _seconds(request, window[1]))
+            bound = (
+                _seconds(request=request, moment=window[0]),
+                _seconds(request=request, moment=window[1]),
+            )
             if edge.duration > bound[1]:
-                reject(dn, "DIRECT_TIME_WINDOW_UNREACHABLE")
+                reject(dn=dn, code="DIRECT_TIME_WINDOW_UNREACHABLE")
                 continue
 
         dns.append(dn)
@@ -364,7 +371,7 @@ def _matrices(
                 if leg.planDistance or seconds:
                     warnings.append(f"SAME_SITE_TRAVEL_NORMALIZED: {a} -> {b}")
                 continue
-            distance_row[j] = scaled(leg.planDistance, DIST_SCALE)
+            distance_row[j] = scaled(value=leg.planDistance, scale=DIST_SCALE)
             duration_row[j] = seconds
     return distance, duration
 
@@ -372,8 +379,8 @@ def _matrices(
 def _check_load_precision(dns: list[DN], vehicles: list[Vehicle]) -> None:
     """预先检查载荷精度，避免仅在进入某个求解分支后才发现非法数值。"""
     for dn in dns:
-        scaled(dn.totalGrossVolume, LOAD_SCALE)
-        scaled(dn.totalGrossWeight, LOAD_SCALE)
+        scaled(value=dn.totalGrossVolume, scale=LOAD_SCALE)
+        scaled(value=dn.totalGrossWeight, scale=LOAD_SCALE)
     for vehicle in vehicles:
-        scaled(vehicle.totalVolume, LOAD_SCALE)
-        scaled(vehicle.totalWeight, LOAD_SCALE)
+        scaled(value=vehicle.totalVolume, scale=LOAD_SCALE)
+        scaled(value=vehicle.totalWeight, scale=LOAD_SCALE)

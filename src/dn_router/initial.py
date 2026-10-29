@@ -22,8 +22,10 @@ def build_initial_routes(problem: Problem, deadline: float) -> list[Route]:
     """
     routes: list[Route] = []
     for node in _sweep_order(problem):
-        direct = Route([node], problem.fitting_vehicles([node])[0])
-        best = _best_insertion(problem, routes, direct, deadline)
+        direct = Route(nodes=[node], vehicle=problem.fitting_vehicles([node])[0])
+        best = _best_insertion(
+            problem=problem, routes=routes, direct=direct, deadline=deadline
+        )
         if best is None:
             # 未找到改善插入或预算已耗尽时，为该单保留可行直送路线。
             routes.append(direct)
@@ -65,9 +67,15 @@ def _best_insertion(
         if not vehicles or not problem.within_stop_limit(merged):
             continue
         base = problem.length(route.nodes) + problem.length(direct.nodes)
-        for nodes in problem.insertions(route.nodes, node):
-            merged_route = Route(nodes, vehicles[0])
-            delta = _delta(problem, merged_route, route, direct, base)
+        for nodes in problem.insertions(nodes=route.nodes, node=node):
+            merged_route = Route(nodes=nodes, vehicle=vehicles[0])
+            delta = _delta(
+                problem=problem,
+                merged=merged_route,
+                old=route,
+                direct=direct,
+                base=base,
+            )
             if delta < best_delta:
                 best_delta, best = delta, (index, merged_route)
     return best

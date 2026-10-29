@@ -91,7 +91,7 @@ def main(argv: list[str] | None = None) -> int:
     except (ValueError, OSError) as error:
         result = _invalid_input(error)
     else:
-        _, result = solve_text(raw, args.time_limit_ms)
+        _, result = solve_text(raw=raw, time_limit_ms=args.time_limit_ms)
 
     # 默认 stdout 只交付路线数组，诊断写入 stderr；--report 输出完整报告。
     if not args.report:

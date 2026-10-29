@@ -32,7 +32,7 @@ def test_stop_coordinates_require_all_orders_to_agree():
             }
         ]
     }
-    data = report_data(payload, result)
+    data = report_data(payload=payload, result=result)
     assert data["depot"]["coordinate"] == [0, 0]
     assert [s["coordinate"] for s in data["result"]["routes"][0]["stops"]] == [
         [30, 20],
@@ -45,8 +45,12 @@ def test_stop_coordinates_require_all_orders_to_agree():
 # 输入字段无效且没有路线时也能生成可读状态报告。
 def test_invalid_input_can_render_without_routes():
     data = report_data(
-        {"dnSiteVoList": None, "vehicleTypeVoList": None, "sourceLatitude": "bad"},
-        {"status": "INVALID_INPUT", "routes": []},
+        payload={
+            "dnSiteVoList": None,
+            "vehicleTypeVoList": None,
+            "sourceLatitude": "bad",
+        },
+        result={"status": "INVALID_INPUT", "routes": []},
     )
     assert data["depot"]["coordinate"] is None
 
@@ -54,8 +58,11 @@ def test_invalid_input_can_render_without_routes():
 # 错误集合类型和非有限数值不能破坏报告 JSON。
 def test_malformed_input_collections_and_nonfinite_values():
     data = report_data(
-        {"dnSiteVoList": 42, "vehicleTypeVoList": [{"totalVolume": float("nan")}]},
-        {"status": "INVALID_INPUT", "routes": []},
+        payload={
+            "dnSiteVoList": 42,
+            "vehicleTypeVoList": [{"totalVolume": float("nan")}],
+        },
+        result={"status": "INVALID_INPUT", "routes": []},
     )
     assert data["vehicles"][0]["totalVolume"] is None
     assert data["request"]["dnCount"] == 0 and data["orders"] == {}
@@ -75,7 +82,9 @@ def test_request_summary_and_order_details():
         ],
         "allPathDistanceVoList": [{}, {}],
     }
-    data = report_data(payload, {"status": "INVALID_INPUT", "routes": []})
+    data = report_data(
+        payload=payload, result={"status": "INVALID_INPUT", "routes": []}
+    )
     request = data["request"]
     assert request["sourceLocation"] == "WH" and request["unloadingTime"] == 0.5
     assert request["lonAndLatCombination"] == 0 and request["maxSiteQty"] == 2
@@ -144,7 +153,7 @@ def timed_route(start="2026-10-21 23:50:00"):
 
 # 跨日时间轴正确拆分行驶、等待、卸货，累计时长不重复。
 def test_timeline_crosses_midnight_and_splits_wait_once():
-    timeline = report_data({}, {"routes": [timed_route()]})["timeline"]
+    timeline = report_data(payload={}, result={"routes": [timed_route()]})["timeline"]
     assert timeline["startTime"] == "2026-10-21 23:50:00"
     assert timeline["durationSeconds"] == 2400
     segments = timeline["routes"][0]["segments"]
@@ -163,7 +172,8 @@ def test_timeline_crosses_midnight_and_splits_wait_once():
 # 不同发车时间共用全局起点，零时长行驶仍保留边界。
 def test_timeline_multiple_departures_share_one_origin():
     timeline = report_data(
-        {}, {"routes": [timed_route(), timed_route("2026-10-22 00:00:00")]}
+        payload={},
+        result={"routes": [timed_route(), timed_route("2026-10-22 00:00:00")]},
     )["timeline"]
     assert [r["start"] for r in timeline["routes"]] == [0, 600]
     assert [r["end"] for r in timeline["routes"]] == [2400, 2400]
@@ -180,10 +190,12 @@ def test_timeline_invalid_or_absent_times_do_not_invent_a_schedule():
     route["stops"][0]["waitingBeforeArrivalSeconds"] = (
         2000  # 等待过长会使行驶起点早于出发时刻，应判为无效。
     )
-    timeline = report_data({}, {"routes": [route, timed_route()]})["timeline"]
+    timeline = report_data(payload={}, result={"routes": [route, timed_route()]})[
+        "timeline"
+    ]
     assert timeline["routes"][0] is None
     assert timeline["routes"][1] is not None
-    assert report_data({}, {"routes": []})["timeline"] is None
+    assert report_data(payload={}, result={"routes": []})["timeline"] is None
 
 
 # 瞬时路线总时长保持为零，不为动画扩造时间。
@@ -200,7 +212,7 @@ def test_instantaneous_route_has_zero_duration_without_fabricated_time():
             }
         ],
     }
-    timeline = report_data({}, {"routes": [route]})["timeline"]
+    timeline = report_data(payload={}, result={"routes": [route]})["timeline"]
     assert timeline["durationSeconds"] == 0
     assert all(s["start"] == s["end"] == 0 for s in timeline["routes"][0]["segments"])
 
@@ -229,7 +241,7 @@ def test_public_route_contract_keeps_eta_and_counts_shared_unloading_once():
     }
     result = {"status": "FEASIBLE", "routes": [public_route]}
     original = copy.deepcopy(result)
-    data = report_data(payload, result)
+    data = report_data(payload=payload, result=result)
     route = data["result"]["routes"][0]
     assert result == original
     assert route["physicalStopCount"] == route["siteCount"] == 2
@@ -262,7 +274,9 @@ def test_raw_matrix_keeps_missing_legs_as_null():
             {"from": "A", "to": "X", "planDistance": 9},
         ],
     }
-    matrix = report_data(payload, {"status": "INVALID_INPUT", "routes": []})["matrix"]
+    matrix = report_data(
+        payload=payload, result={"status": "INVALID_INPUT", "routes": []}
+    )["matrix"]
     assert matrix["ids"] == ["WH", "A", "B"]
     assert matrix["distance"] == [[None, 1.5, None], [None] * 3, [None] * 3]
     assert matrix["duration"][0][1] == 60
@@ -316,7 +330,7 @@ def test_server_page_files_and_solve(served):
 def test_server_rejects_paths_outside_root_and_reports_bad_uploads(served):
     assert fetch(served + "/api/solve?file=../outside.json")[0] == 400
     assert fetch(served + "/api/solve?file=missing.json")[0] == 400
-    status, body = fetch(served + "/api/solve", b"{not json")
+    status, body = fetch(url=served + "/api/solve", body=b"{not json")
     assert status == 200 and json.loads(body)["result"]["status"] == "INVALID_INPUT"
 
 
@@ -331,8 +345,8 @@ def test_legacy_routes_without_time_still_show_stops():
     )
     for field in ("earliestShippingDate", "unloadingTime", "latestShippingDate"):
         payload.pop(field, None)
-    payload, result = solve_text(json.dumps(payload), 300)
-    data = report_data(payload, result)
+    payload, result = solve_text(raw=json.dumps(payload), time_limit_ms=300)
+    data = report_data(payload=payload, result=result)
     routes = data["result"]["routes"]
     assert [dn for r in routes for s in r["stops"] for dn in s["orderReleaseIds"]] == [
         dn for r in result["routes"] for dn in r["siteAddresses"]

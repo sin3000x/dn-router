@@ -38,14 +38,18 @@ def reduce_routes(
     plans = best = [list(route.nodes) for route in routes]
     stalls = 0
     while len(best) > bound and stalls < MAX_STALLS and perf_counter() < deadline:
-        if smaller := _empty_one_route(problem, plans, rng, deadline):
+        if smaller := _empty_one_route(
+            problem=problem, plans=plans, rng=rng, deadline=deadline
+        ):
             plans, stalls = smaller, 0
         else:
-            plans, stalls = _shake(problem, plans, rng), stalls + 1
+            plans, stalls = _shake(problem=problem, plans=plans, rng=rng), stalls + 1
         best = min(best, plans, key=len)
     if len(best) == len(routes):
         return routes
-    return [Route(nodes, problem.fitting_vehicles(nodes)[0]) for nodes in best]
+    return [
+        Route(nodes=nodes, vehicle=problem.fitting_vehicles(nodes)[0]) for nodes in best
+    ]
 
 
 def vehicle_lower_bound(problem: Problem) -> int:
@@ -73,7 +77,10 @@ def _empty_one_route(
             break
         rest = [nodes for i, nodes in enumerate(plans) if i != victim]
         displaced = rng.sample(plans[victim], len(plans[victim]))
-        if all(_insert_cheapest(problem, rest, node) for node in displaced):
+        if all(
+            _insert_cheapest(problem=problem, plans=rest, node=node)
+            for node in displaced
+        ):
             return rest
     return None
 
@@ -85,7 +92,7 @@ def _insert_cheapest(problem: Problem, plans: Plans, node: int) -> bool:
         if not problem.admits([*nodes, node]):
             continue
         base = problem.length(nodes)
-        for candidate in problem.insertions(nodes, node):
+        for candidate in problem.insertions(nodes=nodes, node=node):
             delta = problem.length(candidate) - base
             if best is None or delta < best[0]:
                 best = delta, index, candidate
@@ -104,11 +111,11 @@ def _shake(problem: Problem, plans: Plans, rng: random.Random) -> Plans:
         source, target = rng.sample(range(len(plans)), 2)
         node = rng.choice(plans[source])
         rest = [x for x in plans[source] if x != node]
-        if rest and not _sequence_ok(problem, rest):
+        if rest and not _sequence_ok(problem=problem, nodes=rest):
             continue
         if not problem.admits([*plans[target], node]):
             continue
-        for candidate in problem.insertions(plans[target], node):
+        for candidate in problem.insertions(nodes=plans[target], node=node):
             plans[target], plans[source] = candidate, rest
             break
     return [nodes for nodes in plans if nodes]

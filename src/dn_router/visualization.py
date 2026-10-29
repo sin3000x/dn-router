@@ -103,7 +103,11 @@ def _display_routes(payload: Json, routes: list[Json]) -> list[Json]:
             converted.append(route)
             continue
         if "siteDetails" not in route:
-            converted.append(_untimed_route(problem, orders, number, route))
+            converted.append(
+                _untimed_route(
+                    problem=problem, orders=orders, number=number, route=route
+                )
+            )
             continue
         previous_time = datetime.fromisoformat(route["departure_date"])
         previous_node = 0
@@ -132,7 +136,9 @@ def _display_routes(payload: Json, routes: list[Json]) -> list[Json]:
                         "departureTime": departure.isoformat(sep=" "),
                         "waitingBeforeArrivalSeconds": wait,
                         "unloadingSeconds": problem.unload_seconds,
-                        **_leg(problem, previous_node, node, timed=True),
+                        **_leg(
+                            problem=problem, origin=previous_node, node=node, timed=True
+                        ),
                     }
                 )
                 previous_time = departure
@@ -180,7 +186,9 @@ def _untimed_route(
                 {
                     "siteCode": dn.siteCode,
                     "orderReleaseIds": [order],
-                    **_leg(problem, previous_node, node, timed=False),
+                    **_leg(
+                        problem=problem, origin=previous_node, node=node, timed=False
+                    ),
                 }
             )
         previous_node = node
@@ -305,8 +313,8 @@ def report_data(payload: Json, result: Mapping[str, Any]) -> Json:
     def stop_coordinate(stop: Json) -> Coordinate | None:
         points = [
             _coordinate(
-                orders.get(dn, {}).get("deliveryLatitude"),
-                orders.get(dn, {}).get("deliveryLongitude"),
+                lat=orders.get(dn, {}).get("deliveryLatitude"),
+                lon=orders.get(dn, {}).get("deliveryLongitude"),
             )
             for dn in stop.get("orderReleaseIds", [])
         ]
@@ -323,19 +331,21 @@ def report_data(payload: Json, result: Mapping[str, Any]) -> Json:
                 for stop in route.get("stops", [])
             ],
         }
-        for route in _display_routes(payload, result.get("routes", []))
+        for route in _display_routes(payload=payload, routes=result.get("routes", []))
     ]
     data = {
         "result": {**result, "routes": routes},
         "depot": {
             "name": payload.get("sourceLocation", "仓库"),
             "coordinate": _coordinate(
-                payload.get("sourceLatitude"), payload.get("sourceLongitude")
+                lat=payload.get("sourceLatitude"), lon=payload.get("sourceLongitude")
             ),
         },
         "vehicles": records("vehicleTypeVoList"),
-        "request": _request_summary(payload, records),
-        "matrix": _raw_matrix(payload, list(orders), records("allPathDistanceVoList")),
+        "request": _request_summary(payload=payload, records=records),
+        "matrix": _raw_matrix(
+            payload=payload, ids=list(orders), legs=records("allPathDistanceVoList")
+        ),
         # 停靠明细逐 DN 展示体积、重量和时间窗，只取页面用到的字段。
         "orders": {
             dn: {k: order.get(k) for k in _ORDER_FIELDS} for dn, order in orders.items()

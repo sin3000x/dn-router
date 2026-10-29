@@ -69,8 +69,11 @@ def main() -> None:
     # 可给多个预算，观察同一批样本的目标值随时限的变化。
     parser.add_argument("--time-limit-ms", type=int, nargs="+", default=[200])
     args = parser.parse_args()
-    payloads = [generate(args.dn, seed) for seed in range(args.runs)]
-    summaries = [summarize(args, payloads, budget) for budget in args.time_limit_ms]
+    payloads = [generate(n=args.dn, seed=seed) for seed in range(args.runs)]
+    summaries = [
+        summarize(args=args, payloads=payloads, budget=budget)
+        for budget in args.time_limit_ms
+    ]
     output = summaries[0] if len(summaries) == 1 else summaries
     print(json.dumps(output, indent=2))
 

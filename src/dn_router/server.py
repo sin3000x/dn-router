@@ -65,14 +65,14 @@ class _Handler(BaseHTTPRequestHandler):
         query = parse_qs(url.query)
         if url.path == "/":
             self._send(
-                HTTPStatus.OK,
-                _PAGE.read_text(encoding="utf-8"),
-                "text/html; charset=utf-8",
+                status=HTTPStatus.OK,
+                text=_PAGE.read_text(encoding="utf-8"),
+                content_type="text/html; charset=utf-8",
             )
         elif url.path == "/api/files":
             self._json(
-                HTTPStatus.OK,
-                {
+                status=HTTPStatus.OK,
+                body={
                     "root": str(self.root),
                     "defaultTimeLimitMs": self.default_time_limit_ms,
                     "files": list_json_files(self.root),
@@ -81,30 +81,36 @@ class _Handler(BaseHTTPRequestHandler):
         elif url.path == "/api/solve":
             name = query.get("file", [""])[0]
             try:
-                raw = resolve_json_file(self.root, name).read_text(encoding="utf-8")
+                raw = resolve_json_file(root=self.root, name=name).read_text(
+                    encoding="utf-8"
+                )
             except (ValueError, OSError) as error:
-                self._json(HTTPStatus.BAD_REQUEST, {"error": str(error)})
+                self._json(status=HTTPStatus.BAD_REQUEST, body={"error": str(error)})
                 return
-            self._solve(raw, query, {"file": name})
+            self._solve(raw=raw, query=query, source={"file": name})
         else:
-            self._json(HTTPStatus.NOT_FOUND, {"error": "not found"})
+            self._json(status=HTTPStatus.NOT_FOUND, body={"error": "not found"})
 
     def do_POST(self) -> None:
         url = urlsplit(self.path)
         if url.path != "/api/solve":
-            self._json(HTTPStatus.NOT_FOUND, {"error": "not found"})
+            self._json(status=HTTPStatus.NOT_FOUND, body={"error": "not found"})
             return
         length = int(self.headers.get("Content-Length") or 0)
         if not 0 < length <= _MAX_BODY_BYTES:
-            self._json(HTTPStatus.BAD_REQUEST, {"error": "empty or oversized body"})
+            self._json(
+                status=HTTPStatus.BAD_REQUEST, body={"error": "empty or oversized body"}
+            )
             return
         try:
             raw = self.rfile.read(length).decode("utf-8")
         except UnicodeDecodeError as error:
-            self._json(HTTPStatus.BAD_REQUEST, {"error": str(error)})
+            self._json(status=HTTPStatus.BAD_REQUEST, body={"error": str(error)})
             return
         query = parse_qs(url.query)
-        self._solve(raw, query, {"name": query.get("name", ["上传的请求"])[0]})
+        self._solve(
+            raw=raw, query=query, source={"name": query.get("name", ["上传的请求"])[0]}
+        )
 
     def _solve(self, raw: str, query: dict[str, list[str]], source: Any) -> None:
         """求解请求文本；业务失败照常返回报告，只有展示数据整理失败才算服务错误。"""
@@ -114,22 +120,32 @@ class _Handler(BaseHTTPRequestHandler):
             limit = self.default_time_limit_ms
         limit = min(max(limit, 1), _MAX_TIME_LIMIT_MS)
         try:
-            payload, result = solve_text(raw, limit)
+            payload, result = solve_text(raw=raw, time_limit_ms=limit)
         except Exception as error:  # noqa: BLE001 - HTTP 边界兜底
             # 求解内部异常也要给页面返回可读错误，而不是直接断开连接。
-            self._json(HTTPStatus.INTERNAL_SERVER_ERROR, {"error": repr(error)})
+            self._json(
+                status=HTTPStatus.INTERNAL_SERVER_ERROR, body={"error": repr(error)}
+            )
             return
         try:
-            data = report_data(payload if isinstance(payload, dict) else {}, result)
+            data = report_data(
+                payload=payload if isinstance(payload, dict) else {}, result=result
+            )
         except (KeyError, TypeError, ValueError) as error:
-            self._json(HTTPStatus.INTERNAL_SERVER_ERROR, {"error": repr(error)})
+            self._json(
+                status=HTTPStatus.INTERNAL_SERVER_ERROR, body={"error": repr(error)}
+            )
             return
         # output 保留求解器原始结果，页面导出时与 CLI --report 一致。
         body = {**data, "output": result, "source": {**source, "timeLimitMs": limit}}
-        self._json(HTTPStatus.OK, body)
+        self._json(status=HTTPStatus.OK, body=body)
 
     def _json(self, status: HTTPStatus, body: Any) -> None:
-        self._send(status, dumps(body), "application/json; charset=utf-8")
+        self._send(
+            status=status,
+            text=dumps(body),
+            content_type="application/json; charset=utf-8",
+        )
 
     def _send(self, status: HTTPStatus, text: str, content_type: str) -> None:
         body = text.encode("utf-8")
@@ -197,7 +213,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--time-limit-ms", type=int, default=1000)
     args = parser.parse_args(argv)
     try:
-        server = make_server(args.dir, args.host, args.port, args.time_limit_ms)
+        server = make_server(
+            root=args.dir,
+            host=args.host,
+            port=args.port,
+            time_limit_ms=args.time_limit_ms,
+        )
     except OSError as error:
         parser.exit(
             1,

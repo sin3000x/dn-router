@@ -128,7 +128,7 @@ def _seed_stages(request: Request) -> list[Stage]:
     # 插入法初解：总预算 20%。插入只扫一遍，多给时间只是让它跑完；
     # 被截断的 DN 改为直送，车辆数后续几乎减不回来，所以不设绝对上限。
     insertion = Stage(
-        run=lambda problem, _, end: build_initial_routes(problem, end),
+        run=lambda problem, _, end: build_initial_routes(problem=problem, deadline=end),
         share=0.2,
     )
     stages = [insertion]
@@ -195,7 +195,7 @@ def solve(payload: dict[str, Any], *, time_limit_ms: int = 200) -> Result:
         return finish(**base, status="INFEASIBLE_INPUT", routes=[], errors=oversized)
 
     # 逐单直送保证完整覆盖，之后每一步都只在得到可行解时替换。
-    routes = [Route([i], problem.fitting_vehicles([i])[0]) for i in nodes]
+    routes = [Route(nodes=[i], vehicle=problem.fitting_vehicles([i])[0]) for i in nodes]
     source, solver_status, build_ms, search_ms = "direct_fallback", None, 0.0, 0.0
 
     if nodes and perf_counter() < deadline:
@@ -214,8 +214,12 @@ def solve(payload: dict[str, Any], *, time_limit_ms: int = 200) -> Result:
         build_started = perf_counter()
         # 每车型槽位数取初解路线数：总槽位仍是初解车数的 K 倍，足够局部搜索拆分路线；
         # 距离优先若按 N 预留，100 单 6 车型的建模就会耗掉约 0.8 秒预算。
-        model = _RoutingModel(problem, weights, len(routes))
-        solution, solver_status, search_ms = model.search(routes, deadline)
+        model = _RoutingModel(
+            problem=problem, weights=weights, slots_per_vehicle=len(routes)
+        )
+        solution, solver_status, search_ms = model.search(
+            initial=routes, deadline=deadline
+        )
         build_ms = (perf_counter() - build_started) * 1000 - search_ms
         if solution:
             routes, source = model.routes(solution), "ortools"
@@ -223,11 +227,11 @@ def solve(payload: dict[str, Any], *, time_limit_ms: int = 200) -> Result:
     # 输出前统一独立审计，不依赖求解器约束是否被正确编码。
     # 输入已通过校验，审计失败说明求解流程有缺陷，不能报告为输入错误。
     try:
-        validate_routes(problem, routes)
+        validate_routes(problem=problem, routes=routes)
     except InputError as error:
         errors = [{"code": "ROUTE_AUDIT_FAILED", "message": str(error)}]
         return finish(**base, status="SOLVER_ERROR", routes=[], errors=errors)
-    output = [_route_output(problem, route) for route in routes]
+    output = [_route_output(problem=problem, route=route) for route in routes]
     total_distance = sum(problem.length(r.nodes) for r in routes) / DIST_SCALE
     policy = "vehicles_distance_type" if request.count_first else "distance_type"
     # 有限时间搜索只能声明可行，不能据此声称全局最优。
@@ -260,7 +264,7 @@ def _route_output(problem: Problem, route: Route) -> RouteOutput:
     return {
         "dist": problem.length(route.nodes) / DIST_SCALE,
         "siteAddresses": [d.orderReleaseId for d in dns],
-        **_schedule_output(problem, route.nodes),
+        **_schedule_output(problem=problem, nodes=route.nodes),
         "vehicle": problem.vehicles[route.vehicle].vehicleTypeName,
         "volume": float(sum(d.totalGrossVolume for d in dns)),
         "weight": float(sum(d.totalGrossWeight for d in dns)),
@@ -384,7 +388,9 @@ class _RoutingModel:
                     nodes.append(node)
                 index = solution.Value(self.routing.NextVar(index))
             if nodes:
-                routes.append(Route(nodes, self.problem.fitting_vehicles(nodes)[0]))
+                routes.append(
+                    Route(nodes=nodes, vehicle=self.problem.fitting_vehicles(nodes)[0])
+                )
         return routes
 
     def _slot_routes(self, routes: Iterable[Route]) -> list[list[int]]:
@@ -441,7 +447,7 @@ class _RoutingModel:
     def _add_cost(self, weights: _ObjectiveWeights) -> None:
         routing = self.routing
         cost = self._register_arcs(
-            lambda i, j: self._distance(i, j) * weights.distance_weight
+            lambda i, j: self._distance(i=i, j=j) * weights.distance_weight
         )
         routing.SetArcCostEvaluatorOfAllVehicles(cost)
         for slot, vehicle in enumerate(self.slot_vehicles):
@@ -458,10 +464,13 @@ class _RoutingModel:
             def demand(node: int, field: str = demand_field) -> int:
                 if not self._is_dn(node):
                     return 0
-                return scaled(getattr(problem.dn(node), field), LOAD_SCALE)
+                return scaled(value=getattr(problem.dn(node), field), scale=LOAD_SCALE)
 
             capacities = [
-                scaled(getattr(problem.vehicles[vehicle], capacity_field), LOAD_SCALE)
+                scaled(
+                    value=getattr(problem.vehicles[vehicle], capacity_field),
+                    scale=LOAD_SCALE,
+                )
                 for vehicle in self.slot_vehicles
             ]
             callback = self._register_nodes(demand)
@@ -509,7 +518,8 @@ class _RoutingModel:
 
         for group in shared:
             on_slot = [
-                solver.Sum([self._on_slot(i, s) for i in group]).Var() for s in slots
+                solver.Sum([self._on_slot(node=i, slot=s) for i in group]).Var()
+                for s in slots
             ]
             for i in group:
                 same_site_count = solver.Element(on_slot, self._vehicle_of(i))
@@ -544,7 +554,7 @@ class _RoutingModel:
 
         for slot in range(len(self.slot_vehicles)):
             visited = [
-                solver.Max([self._on_slot(i, slot) for i in group])
+                solver.Max([self._on_slot(node=i, slot=slot) for i in group])
                 for group in groups.values()
             ]
             solver.Add(solver.Sum(visited) <= request.maxSiteQty)
@@ -576,7 +586,7 @@ class _RoutingModel:
                     return 0
                 if i == DEPOT:
                     return problem.distance[DEPOT][j]
-                return -self._distance(i, j)
+                return -self._distance(i=i, j=j)
 
             longest_first_leg = max(problem.distance[DEPOT])
             routing.AddDimension(
