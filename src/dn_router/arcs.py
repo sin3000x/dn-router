@@ -21,7 +21,8 @@ def time_matrix(problem: Problem) -> np.ndarray:
     """
     size = len(problem.dns) + 2
     is_dn = _is_dn(size)
-    site_of = {dn.siteCode: k for k, dn in enumerate(problem.dns)}  # 站点 → 编号
+    # 站点 → 编号：同站的 DN 编号相同即可，具体数值无意义，只用于判断同站。
+    site_of = {dn.siteCode: k for k, dn in enumerate(problem.dns)}
     site = np.full(size, -1, dtype=np.int64)  # 仓库和 sink 的 -1 不与任何站点相等
     site[1:-1] = [site_of[dn.siteCode] for dn in problem.dns]
     same_site = is_dn[:, None] & is_dn[None, :] & (site[:, None] == site[None, :])
