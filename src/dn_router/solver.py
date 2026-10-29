@@ -11,9 +11,11 @@ from datetime import timedelta
 from time import perf_counter
 from typing import Any, Literal, NamedTuple, NotRequired, TypedDict, Unpack
 
+import numpy as np
 from ortools.constraint_solver import pywrapcp, routing_enums_pb2
 from pydantic import ValidationError
 
+from .arcs import distance_matrix, first_leg_budget, time_matrix
 from .initial import build_initial_routes
 from .models import GroupKey, Request
 from .problem import (
@@ -346,6 +348,7 @@ class _RoutingModel:
         routing: OR-Tools 路由模型，持有 NextVar、VehicleVar 及各 Dimension。
         solver: routing 内部的旧版 CP 求解器，用于加 Dimension 表达不了的约束。
         node_of: 索引 → 节点号，供回调把收到的索引转回节点。
+        distance: 按节点号索引的距离矩阵（ndarray，边长 N + 2），见 arcs.py。
     """
 
     def __init__(
@@ -371,6 +374,7 @@ class _RoutingModel:
         index_count = self.manager.GetNumberOfIndices()
         self.node_of = [self.manager.IndexToNode(i) for i in range(index_count)]
 
+        self.distance = distance_matrix(problem)
         self._add_cost(weights)
         self._add_capacities()
         # 旧版请求不考虑时间，不建时间维度。
@@ -455,38 +459,25 @@ class _RoutingModel:
         """布尔变量：node 是否由车辆 vehicle 配送。"""
         return self.solver.IsEqualCstVar(self._vehicle_of(node), vehicle)
 
-    def _register_arcs(self, arc: Callable[[int, int], int]) -> int:
-        """把按节点号定义的弧函数 arc(i, j) 预先算成矩阵，注册为二元回调。
+    def _register_matrix(self, matrix: np.ndarray) -> int:
+        """把按节点号索引的矩阵注册为二元回调。
 
         回调在搜索中被频繁调用，每次都要跨过 C++ 与 Python 的边界，所以只做查表。
+        先转成嵌套列表：逐元素读取 ndarray 比读取列表慢得多。
 
         Returns:
             回调编号，供 Dimension 和弧成本引用。
         """
-        nodes = range(self.sink + 1)
-        matrix = [[arc(i, j) for j in nodes] for i in nodes]
+        rows = matrix.tolist()
         node_of = self.node_of
         return self.routing.RegisterTransitCallback(
-            lambda a, b: matrix[node_of[a]][node_of[b]]
+            lambda a, b: rows[node_of[a]][node_of[b]]
         )
 
     def _register_nodes(self, value: Callable[[int], int]) -> int:
         """注册一元回调：值只取决于离开的节点 value(node)，与去向无关（如需求量）。"""
         values = [value(node) for node in self.node_of]
         return self.routing.RegisterUnaryTransitCallback(lambda a: values[a])
-
-    def _distance(self, i: int, j: int) -> int:
-        """节点 i 到 j 的距离（已缩放为整数）；进出 sink 为零，开放路线不返仓。"""
-        return 0 if self.sink in (i, j) else self.problem.distance[i][j]
-
-    def _travel_and_unload(self, i: int, j: int) -> int:
-        """从 i 出发到 j 的时间：离开实际站点时计一次卸货，同站 DN 之间为零。"""
-        problem = self.problem
-        travel = 0 if self.sink in (i, j) else problem.duration[i][j]
-        if not self._is_dn(i):
-            return travel
-        same_site = self._is_dn(j) and problem.dn(i).siteCode == problem.dn(j).siteCode
-        return travel if same_site else travel + problem.unload_seconds
 
     # ---- 约束 ----
 
@@ -496,9 +487,7 @@ class _RoutingModel:
         固定成本的车型等级部分让大车比小车贵，同等条件下优先用小车型。
         """
         routing = self.routing
-        cost = self._register_arcs(
-            lambda i, j: self._distance(i=i, j=j) * weights.distance_weight
-        )
+        cost = self._register_matrix(self.distance * weights.distance_weight)
         routing.SetArcCostEvaluatorOfAllVehicles(cost)
         for vehicle, vehicle_type in enumerate(self.type_of_vehicle):
             routing.SetFixedCostOfVehicle(
@@ -538,7 +527,7 @@ class _RoutingModel:
     def _add_time(self) -> None:
         """累计值表示开始卸货时间；松弛量允许提前到达后等待。"""
         problem, routing = self.problem, self.routing
-        transit = self._register_arcs(self._travel_and_unload)
+        transit = self._register_matrix(time_matrix(problem))
         routing.AddDimension(transit, problem.horizon, problem.horizon, False, "Time")
         time = routing.GetDimensionOrDie("Time")
         for node in range(1, self.sink):
@@ -638,18 +627,9 @@ class _RoutingModel:
         # 维度约束能被局部搜索过滤器看到；改用 solver.Add 时，路线插入类算子
         # 看不到该约束，产生的候选几乎都在最终 CP 检查中被否决，无法减车。
         if request.distanceLessThanFirstLeg:
-
-            def budget(i: int, j: int) -> int:
-                if not self._is_dn(j):
-                    return 0
-                if i == DEPOT:
-                    return problem.distance[DEPOT][j]
-                return -self._distance(i=i, j=j)
-
             longest_first_leg = max(problem.distance[DEPOT])
-            routing.AddDimension(
-                self._register_arcs(budget), 0, longest_first_leg, True, "FirstLeg"
-            )
+            budget = self._register_matrix(first_leg_budget(self.distance))
+            routing.AddDimension(budget, 0, longest_first_leg, True, "FirstLeg")
 
 
 def _search_parameters(time_limit_ms: float) -> Any:

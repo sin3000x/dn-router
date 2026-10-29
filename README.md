@@ -90,6 +90,7 @@ data = report_data(payload, result)  # 页面所用的 JSON 数据
 - `src/dn_router/models.py`：输入类型与结构校验。
 - `problem.py`：矩阵、单位、预检查、独立路线审计。
 - `initial.py`：有界可行初解构造。
+- `arcs.py`：求解器回调用的距离、时间、首段预算矩阵，用 numpy 整体计算。
 - `reduce.py`：车辆数优先时的路线消除阶段；阶段列表见 `solver._seed_stages`，新增阶段只需在此挂接。
 - `solver.py`：OR-Tools 模型与输出。
 - `visualization.py` + `report.html`：可视化报告的数据组装与页面模板。
