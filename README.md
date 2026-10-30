@@ -16,13 +16,42 @@ python scripts/benchmark.py --dn 100 --runs 5 --time-limit-ms 200
 
 也支持 `python -m dn_router input.json`、stdin (`input` 为 `-`) 和 `--output result.json`。
 用 uv 的话，把上面的安装换成 `uv sync`，命令前加 `uv run` 即可；仓库不提交 `uv.lock`。
-Python 调用：
+Python 调用，可以直接传请求 JSON 值，也可以传构造好的 `Request`：
 
 ```python
-from dn_router import solve
+from decimal import Decimal
+
+from dn_router import DN, Leg, Request, VehicleType, solve
 
 result = solve(payload, time_limit_ms=1000)
+
+request = Request(
+    sourceLocation="W",
+    sourceLatitude=Decimal("31.2"),
+    sourceLongitude=Decimal("121.5"),
+    dnSiteVoList=[
+        DN(
+            orderReleaseId="D1",
+            siteCode="S1",
+            deliveryLatitude=Decimal("31.3"),
+            deliveryLongitude=Decimal("121.4"),
+            totalGrossVolume=Decimal(1),
+            totalGrossWeight=Decimal(100),
+        )
+    ],
+    vehicleTypeVoList=[
+        VehicleType(
+            vehicleTypeName="small", totalVolume=Decimal(10), totalWeight=Decimal(1000)
+        )
+    ],
+    allPathDistanceVoList=[Leg(origin="W", to="D1", planDistance=Decimal("12.5"))],
+)
+result = solve(request, time_limit_ms=1000)
 ```
+
+字段与 JSON 同名，矩阵边的 `from` 在 Python 里写作 `origin`。数值字段为 `Decimal`，
+传 int/float 运行时也会转换，但类型检查会报错，且 float 可能带入精度误差。
+字段不合法时构造 `Request` 即抛 `pydantic.ValidationError`；solve 内部的业务校验失败仍返回 `INVALID_INPUT`。
 
 `examples/input-original.json` 保留原始示例数据（去掉注释并修正 JSON 标点）：
 DN 体积 100 > 最大容积 65，应返回 `INFEASIBLE_INPUT`，不是成功漏单。

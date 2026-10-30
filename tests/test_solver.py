@@ -3,12 +3,12 @@
 # 直接断言具体输出；缺少字段时测试本身会失败。
 import copy
 import json
+from decimal import Decimal
 from pathlib import Path
 
 import pytest
 
-from dn_router import solve
-from dn_router.models import Request
+from dn_router import Leg, Request, solve
 from dn_router.problem import InputError, Problem, Route, validate_routes
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -82,6 +82,26 @@ def test_extra_fields_are_ignored():
     expected.pathDistanceVoList = expected.allPathDistanceVoList[:1]
     assert Request.model_validate(p) == expected
     assert run(p)["servedOrderCount"] == 1
+
+
+# 直接传入 Request 与传入 JSON 值结果一致；业务规则错误仍返回 INVALID_INPUT。
+def test_request_object_input():
+    p = case()
+    as_dict, as_model = run(p), solve(Request.model_validate(p))
+    for key in ("status", "taskNo", "rejectedOrders", "servedOrderCount"):
+        assert as_model[key] == as_dict[key]
+    q = case(2)
+    q["allPathDistanceVoList"] = q["allPathDistanceVoList"][1:]
+    assert solve(Request.model_validate(q))["status"] == "INVALID_INPUT"
+
+
+# 矩阵边在 Python 里用 origin 构造，序列化回 JSON 时仍为 from。
+def test_leg_constructed_by_name():
+    leg = Leg(origin="W", to="D1", planDistance=Decimal("1.5"))
+    assert leg == Leg(**{"from": "W", "to": "D1", "planDistance": 1.5})
+    request = Request.model_validate(case(1))
+    request.allPathDistanceVoList[0] = leg
+    assert request.model_dump(by_alias=True)["allPathDistanceVoList"][0]["from"] == "W"
 
 
 # 车辆数优先时允许升级车型，将多单合并到一辆车。

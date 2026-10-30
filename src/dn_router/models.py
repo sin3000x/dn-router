@@ -2,7 +2,7 @@
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Annotated, Literal, Self
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import AliasChoices, BaseModel, Field, field_validator, model_validator
 from pydantic.dataclasses import dataclass
 
 # 使用 Decimal 保留业务数值精度；拒绝 NaN 和无穷大。
@@ -69,10 +69,12 @@ class VehicleType(BaseModel):
 
 # 有向矩阵边；from 是 Python 关键字，内部通过 origin 访问。
 # 矩阵约 N² 条，用 slots 数据类代替 BaseModel，校验规则相同但实例构造更快；
-# 同样忽略额外字段。
+# 同样忽略额外字段。Python 里构造用 origin=...，JSON 里仍是 from。
 @dataclass(slots=True)
 class Leg:
-    origin: str = Field(alias="from")
+    origin: str = Field(
+        validation_alias=AliasChoices("from", "origin"), serialization_alias="from"
+    )
     to: str = Field()
     planDistance: NonNegative = Field()
     beginSiteCode: str | None = None

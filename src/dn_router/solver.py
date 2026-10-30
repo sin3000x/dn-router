@@ -137,13 +137,14 @@ def _seed_stages(request: Request) -> list[Stage]:
     return stages
 
 
-def solve(payload: dict[str, Any], *, time_limit_ms: int = 200) -> Result:
+def solve(request: Request | dict[str, Any], *, time_limit_ms: int = 200) -> Result:
     """求解一批配送请求，返回公开结果对象。
 
     预算覆盖整体计算，尽力遵守；原生建模调用不能保证在任意时点中断。
 
     Args:
-        payload: 原始请求 JSON 值，字段见 schemas/request.schema.json。
+        request: 已构造的 Request，或原始请求 JSON 值（字段见
+            schemas/request.schema.json）。Request 构造时已校验，不再重复校验。
         time_limit_ms: 总时间预算，单位毫秒，须为正整数。
 
     Returns:
@@ -168,7 +169,8 @@ def solve(payload: dict[str, Any], *, time_limit_ms: int = 200) -> Result:
 
     try:
         with gc_paused():
-            request = Request.model_validate(payload)
+            if not isinstance(request, Request):
+                request = Request.model_validate(request)
             problem = Problem.from_request(request)
     except (ValidationError, InputError) as error:
         errors: list[ErrorItem] = [{"code": "INVALID_INPUT", "message": str(error)}]
