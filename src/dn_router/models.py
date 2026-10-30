@@ -1,5 +1,4 @@
 # 输入结构与业务字段校验。所有模型使用 pydantic 默认行为：忽略额外字段。
-from datetime import datetime
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Annotated, Literal, Self
 
@@ -19,11 +18,6 @@ COUNT_FIRST_QUOTATIONS = frozenset({"city", "zipCode", "province"})
 _MICRO = Decimal("0.000001")
 
 
-def _is_local_whole_second(value: datetime) -> bool:
-    """采用业务当地时间，拒绝时区和小数秒，避免计算口径不一致。"""
-    return value.tzinfo is None and not value.microsecond
-
-
 # 配送单：DN 是不可拆分的配送单位，siteCode 标识实际卸货地点。
 class DN(BaseModel):
     orderReleaseId: str
@@ -32,18 +26,14 @@ class DN(BaseModel):
     deliveryLongitude: Longitude
     totalGrossVolume: NonNegative
     totalGrossWeight: NonNegative
-    timeWindow: list[datetime] | None = None
+    timeWindow: list[int] | None = None
 
     @field_validator("timeWindow")
     @classmethod
-    def _window(cls, value: list[datetime] | None) -> list[datetime] | None:
+    def _window(cls, value: list[int] | None) -> list[int] | None:
         # 这里只检查时间窗结构；空窗和倒置窗口由预处理按业务规则剔除。
         if value is not None and len(value) not in (0, 2):
             raise ValueError("timeWindow must be null, [], or [start, end]")
-        if value and not all(map(_is_local_whole_second, value)):
-            raise ValueError(
-                "use local timestamps without timezone or fractional seconds"
-            )
         return value
 
     def group_key(self, mode: int | None) -> GroupKey:
@@ -95,11 +85,11 @@ class Request(BaseModel):
     # 唯一权威矩阵；pathDistanceVoList 仅兼容接收。
     allPathDistanceVoList: list[Leg]
     pathDistanceVoList: list[Leg] = Field(default_factory=list)
-    # 卸货单位为小时；出发窗口采用同一业务当地时间。
+    # 时间点、时长（含矩阵 duration）都是同一单位的整数，由调用方约定，这里不换算。
     # 缺少 earliestShippingDate 即旧版不考虑时间的请求，见 timed。
-    unloadingTime: NonNegative = Decimal(0)
-    earliestShippingDate: datetime | None = None
-    latestShippingDate: datetime | None = None
+    unloadingTime: Annotated[int, Field(ge=0)] = 0
+    earliestShippingDate: int | None = None
+    latestShippingDate: int | None = None
     enableTimeWindows: bool = True
     destCountryCode3: str | None = None
     distanceLessThanFirstLeg: bool = False
@@ -137,16 +127,10 @@ class Request(BaseModel):
             )
         if len(set(names)) != len(names) or not all(names):
             raise ValueError("vehicleTypeName must be nonempty and unique")
-        # 出发时间同样要求整秒当地时间，且出发上限不得早于下限。
-        dates = [d for d in (self.earliestShippingDate, self.latestShippingDate) if d]
-        if not all(map(_is_local_whole_second, dates)):
-            raise ValueError("shipping times must be local, whole-second timestamps")
-        if self.latestShippingDate and not self.earliestShippingDate:
+        # 时间可以为 0，判断是否给出必须与 None 比较；出发上限不得早于下限。
+        earliest, latest = self.earliestShippingDate, self.latestShippingDate
+        if latest is not None and earliest is None:
             raise ValueError("latestShippingDate requires earliestShippingDate")
-        if (
-            self.latestShippingDate
-            and self.earliestShippingDate
-            and self.latestShippingDate < self.earliestShippingDate
-        ):
+        if latest is not None and earliest is not None and latest < earliest:
             raise ValueError("warehouse departure window is empty")
         return self

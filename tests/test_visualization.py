@@ -74,7 +74,7 @@ def test_request_summary_and_order_details():
         "sourceLocation": "WH",
         "lonAndLatCombination": 0,
         "maxSiteQty": 2,
-        "unloadingTime": Decimal("0.5"),
+        "unloadingTime": 30,
         "dnSiteVoList": [
             {"orderReleaseId": "A", "siteCode": "S1", "totalGrossVolume": 1},
             {"orderReleaseId": "B", "siteCode": "S1", "timeWindow": []},
@@ -86,7 +86,7 @@ def test_request_summary_and_order_details():
         payload=payload, result={"status": "INVALID_INPUT", "routes": []}
     )
     request = data["request"]
-    assert request["sourceLocation"] == "WH" and request["unloadingTime"] == 0.5
+    assert request["sourceLocation"] == "WH" and request["unloadingTime"] == 30
     assert request["lonAndLatCombination"] == 0 and request["maxSiteQty"] == 2
     assert request["earliestShippingDate"] is None
     assert (request["dnCount"], request["siteCodeCount"], request["legCount"]) == (
@@ -129,43 +129,43 @@ def test_cli_writes_json_for_invalid_input(tmp_path, monkeypatch, report):
     assert body["status"] == "INVALID_INPUT" if report else body == []
 
 
-# 构造跨午夜且包含等待的路线，供时间轴边界测试复用。
-def timed_route(start="2026-10-21 23:50:00"):
+# 构造包含等待的路线，供时间轴边界测试复用。
+def timed_route(start=1000):
     return {
         "departureTime": start,
-        "completionTime": "2026-10-22 00:30:00",
+        "completionTime": 1040,
         "stops": [
             {
-                "arrivalTime": "2026-10-22 00:10:00",
-                "departureTime": "2026-10-22 00:20:00",
-                "waitingBeforeArrivalSeconds": 600,
+                "arrivalTime": 1020,
+                "departureTime": 1030,
+                "waitingBeforeArrival": 10,
                 "orderReleaseIds": [],
             },
             {
-                "arrivalTime": "2026-10-22 00:25:00",
-                "departureTime": "2026-10-22 00:30:00",
-                "waitingBeforeArrivalSeconds": 0,
+                "arrivalTime": 1035,
+                "departureTime": 1040,
+                "waitingBeforeArrival": 0,
                 "orderReleaseIds": [],
             },
         ],
     }
 
 
-# 跨日时间轴正确拆分行驶、等待、卸货，累计时长不重复。
-def test_timeline_crosses_midnight_and_splits_wait_once():
+# 时间轴正确拆分行驶、等待、卸货，累计时长不重复。
+def test_timeline_splits_wait_once():
     timeline = report_data(payload={}, result={"routes": [timed_route()]})["timeline"]
-    assert timeline["startTime"] == "2026-10-21 23:50:00"
-    assert timeline["durationSeconds"] == 2400
+    assert timeline["startTime"] == 1000
+    assert timeline["duration"] == 40
     segments = timeline["routes"][0]["segments"]
     assert [(s["kind"], s["start"], s["end"]) for s in segments] == [
-        ("travel", 0, 600),
-        ("wait", 600, 1200),
-        ("unload", 1200, 1800),
-        ("travel", 1800, 2100),
-        ("wait", 2100, 2100),
-        ("unload", 2100, 2400),
+        ("travel", 0, 10),
+        ("wait", 10, 20),
+        ("unload", 20, 30),
+        ("travel", 30, 35),
+        ("wait", 35, 35),
+        ("unload", 35, 40),
     ]
-    assert sum(s["end"] - s["start"] for s in segments) == 2400
+    assert sum(s["end"] - s["start"] for s in segments) == 40
     assert [s["stopIndex"] for s in segments] == [0, 0, 0, 1, 1, 1]
 
 
@@ -173,22 +173,22 @@ def test_timeline_crosses_midnight_and_splits_wait_once():
 def test_timeline_multiple_departures_share_one_origin():
     timeline = report_data(
         payload={},
-        result={"routes": [timed_route(), timed_route("2026-10-22 00:00:00")]},
+        result={"routes": [timed_route(), timed_route(1010)]},
     )["timeline"]
-    assert [r["start"] for r in timeline["routes"]] == [0, 600]
-    assert [r["end"] for r in timeline["routes"]] == [2400, 2400]
+    assert [r["start"] for r in timeline["routes"]] == [0, 10]
+    assert [r["end"] for r in timeline["routes"]] == [40, 40]
     assert (
         timeline["routes"][1]["segments"][0]["start"]
         == timeline["routes"][1]["segments"][0]["end"]
-        == 600
+        == 10
     )
 
 
 # 无效路线单独禁用播放，不能补造时间，也不能影响其他有效路线。
 def test_timeline_invalid_or_absent_times_do_not_invent_a_schedule():
     route = timed_route()
-    route["stops"][0]["waitingBeforeArrivalSeconds"] = (
-        2000  # 等待过长会使行驶起点早于出发时刻，应判为无效。
+    route["stops"][0]["waitingBeforeArrival"] = (
+        30  # 等待过长会使行驶起点早于出发时刻，应判为无效。
     )
     timeline = report_data(payload={}, result={"routes": [route, timed_route()]})[
         "timeline"
@@ -201,19 +201,19 @@ def test_timeline_invalid_or_absent_times_do_not_invent_a_schedule():
 # 瞬时路线总时长保持为零，不为动画扩造时间。
 def test_instantaneous_route_has_zero_duration_without_fabricated_time():
     route = {
-        "departureTime": "2026-10-21 11:00:00",
-        "completionTime": "2026-10-21 11:00:00",
+        "departureTime": 660,
+        "completionTime": 660,
         "stops": [
             {
-                "arrivalTime": "2026-10-21 11:00:00",
-                "departureTime": "2026-10-21 11:00:00",
-                "waitingBeforeArrivalSeconds": 0,
+                "arrivalTime": 660,
+                "departureTime": 660,
+                "waitingBeforeArrival": 0,
                 "orderReleaseIds": [],
             }
         ],
     }
     timeline = report_data(payload={}, result={"routes": [route]})["timeline"]
-    assert timeline["durationSeconds"] == 0
+    assert timeline["duration"] == 0
     assert all(s["start"] == s["end"] == 0 for s in timeline["routes"][0]["segments"])
 
 
@@ -229,11 +229,11 @@ def test_public_route_contract_keeps_eta_and_counts_shared_unloading_once():
     public_route = {
         "dist": 110,
         "siteAddresses": [first, second, third],
-        "departure_date": "2026-10-21 11:00:00",
+        "departure_date": 660,
         "siteDetails": [
-            {"siteAddress": first, "eta": "2026-10-21 14:00:00"},
-            {"siteAddress": second, "eta": "2026-10-21 14:00:00"},
-            {"siteAddress": third, "eta": "2026-10-21 14:40:00"},
+            {"siteAddress": first, "eta": 840},
+            {"siteAddress": second, "eta": 840},
+            {"siteAddress": third, "eta": 880},
         ],
         "vehicle": "VAN-BRA",
         "volume": 3,
@@ -246,22 +246,22 @@ def test_public_route_contract_keeps_eta_and_counts_shared_unloading_once():
     assert result == original
     assert route["physicalStopCount"] == route["siteCount"] == 2
     assert route["stops"][0]["orderReleaseIds"] == [first, second]
-    assert route["stops"][0]["arrivalTime"] == "2026-10-21 14:00:00"
-    assert route["stops"][0]["departureTime"] == "2026-10-21 14:30:00"
-    assert route["stops"][0]["waitingBeforeArrivalSeconds"] == 10200
-    assert route["stops"][1]["waitingBeforeArrivalSeconds"] == 0
-    assert route["completionTime"] == "2026-10-21 15:10:00"
+    assert route["stops"][0]["arrivalTime"] == 840
+    assert route["stops"][0]["departureTime"] == 870
+    assert route["stops"][0]["waitingBeforeArrival"] == 170
+    assert route["stops"][1]["waitingBeforeArrival"] == 0
+    assert route["completionTime"] == 910
     segments = data["timeline"]["routes"][0]["segments"]
-    assert sum(s["end"] - s["start"] for s in segments if s["kind"] == "unload") == 3600
-    assert sum(s["end"] - s["start"] for s in segments if s["kind"] == "travel") == 1200
+    assert sum(s["end"] - s["start"] for s in segments if s["kind"] == "unload") == 60
+    assert sum(s["end"] - s["start"] for s in segments if s["kind"] == "travel") == 20
     # 每次停靠带上一停靠过来的距离与耗时，取求解使用的矩阵。
-    assert [(s["legDistance"], s["legDurationSeconds"]) for s in route["stops"]] == [
-        (100, 600),
-        (10, 600),
+    assert [(s["legDistance"], s["legDuration"]) for s in route["stops"]] == [
+        (100, 10),
+        (10, 10),
     ]
     matrix = data["matrix"]
     assert matrix["ids"] == ["PA_CROSSDO", first, second, third]
-    assert matrix["distance"][0][3] == 100 and matrix["duration"][3][0] == 600
+    assert matrix["distance"][0][3] == 100 and matrix["duration"][3][0] == 10
 
 
 # 原始矩阵不依赖请求校验：缺失的边保留为 null，未知端点忽略。
@@ -352,5 +352,5 @@ def test_legacy_routes_without_time_still_show_stops():
         dn for r in result["routes"] for dn in r["siteAddresses"]
     ]
     assert all(r["departureTime"] is None for r in routes)
-    assert all(s["legDurationSeconds"] is None for r in routes for s in r["stops"])
+    assert all(s["legDuration"] is None for r in routes for s in r["stops"])
     assert data["timeline"] is None

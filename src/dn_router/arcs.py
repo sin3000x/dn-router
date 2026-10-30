@@ -27,9 +27,7 @@ def time_matrix(problem: Problem) -> np.ndarray:
     site[1:-1] = [site_of[dn.siteCode] for dn in problem.dns]
     same_site = is_dn[:, None] & is_dn[None, :] & (site[:, None] == site[None, :])
     leaves_site = is_dn[:, None] & ~same_site
-    return (
-        _pad(matrix=problem.duration, size=size) + problem.unload_seconds * leaves_site
-    )
+    return _pad(matrix=problem.duration, size=size) + problem.unload * leaves_site
 
 
 def first_leg_budget(distance: np.ndarray) -> np.ndarray:

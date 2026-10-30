@@ -6,19 +6,19 @@
       "DN2",
       "123234768"
     ],
-    "departure_date": "2026-10-21 11:00:00",
+    "departure_date": 660,
     "siteDetails": [
       {
         "siteAddress": "DN3",
-        "eta": "2026-10-21 14:40:00"
+        "eta": 880
       },
       {
         "siteAddress": "DN2",
-        "eta": "2026-10-21 15:20:00"
+        "eta": 920
       },
       {
         "siteAddress": "123234768",
-        "eta": "2026-10-21 15:20:00"
+        "eta": 920
       }
     ],
     "vehicle": "VAN-BRA",

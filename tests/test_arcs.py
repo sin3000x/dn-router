@@ -38,7 +38,7 @@ def reference_time(p, i, j):
     if not is_dn(p, i):
         return travel
     same_site = is_dn(p, j) and p.dn(i).siteCode == p.dn(j).siteCode
-    return travel if same_site else travel + p.unload_seconds
+    return travel if same_site else travel + p.unload
 
 
 def reference_budget(p, i, j):
@@ -73,8 +73,8 @@ def test_unload_counted_once_per_site():
     p = problem()
     time = time_matrix(p)
     assert time[1, 2] == p.duration[1][2] == 0  # 同站：D0 → D1
-    assert time[2, 3] == p.duration[2][3] + p.unload_seconds
-    assert time[len(p.dns), len(p.dns) + 1] == p.unload_seconds  # 最后一站 → sink
+    assert time[2, 3] == p.duration[2][3] + p.unload
+    assert time[len(p.dns), len(p.dns) + 1] == p.unload  # 最后一站 → sink
 
 
 # 向量化计算不应原地修改距离矩阵（预算矩阵由距离取负得到）。

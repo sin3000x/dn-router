@@ -33,7 +33,7 @@ def case(n=3):
     p["pathDistanceVoList"] = []
     ids = [p["sourceLocation"]] + [d["orderReleaseId"] for d in p["dnSiteVoList"]]
     p["allPathDistanceVoList"] = [
-        {"from": a, "to": b, "planDistance": 10 if a == ids[0] else 1, "duration": 60}
+        {"from": a, "to": b, "planDistance": 10 if a == ids[0] else 1, "duration": 1}
         for a in ids
         for b in ids
         if a != b
@@ -117,7 +117,7 @@ def test_unload_once_same_site_tight_window():
     p = case(2)
     for d in p["dnSiteVoList"]:
         d["siteCode"] = "S"
-        d["timeWindow"] = ["2026-10-21 11:01", "2026-10-21 11:02"]
+        d["timeWindow"] = [661, 662]
     r = run(p)
     assert r["vehicleCount"] == 1
     details = r["routes"][0]["siteDetails"]
@@ -125,7 +125,7 @@ def test_unload_once_same_site_tight_window():
     assert details[0]["eta"] == details[1]["eta"]
     schedule = Problem.from_request(Request.model_validate(p)).schedule([1, 2])
     assert schedule[0] == schedule[1]
-    assert schedule[0][2] - schedule[0][1] == 1800
+    assert schedule[0][2] - schedule[0][1] == 30
 
 
 # 同站时间窗不相交时不能共用一次停靠，需要分车。
@@ -133,8 +133,8 @@ def test_same_site_disjoint_windows_use_two_vehicles():
     p = case(2)
     for d in p["dnSiteVoList"]:
         d["siteCode"] = "S"
-    p["dnSiteVoList"][0]["timeWindow"] = ["2026-10-21 12:00", "2026-10-21 12:10"]
-    p["dnSiteVoList"][1]["timeWindow"] = ["2026-10-21 14:00", "2026-10-21 14:10"]
+    p["dnSiteVoList"][0]["timeWindow"] = [720, 730]
+    p["dnSiteVoList"][1]["timeWindow"] = [840, 850]
     r = run(p)
     assert r["vehicleCount"] == 2
     assert all(len(x["siteDetails"]) == 1 for x in r["routes"])
@@ -176,7 +176,7 @@ def test_first_leg_budget_spans_multiple_legs(first_leg, vehicles):
 def test_time_exclusions_only():
     p = case(3)
     p["dnSiteVoList"][0]["timeWindow"] = []
-    p["dnSiteVoList"][1]["timeWindow"] = ["2026-10-21 10:00", "2026-10-21 11:00"]
+    p["dnSiteVoList"][1]["timeWindow"] = [600, 660]
     r = run(p)
     assert {x["code"] for x in r["rejectedOrders"]} == {
         "EMPTY_TIME_WINDOW",
@@ -196,11 +196,11 @@ def test_disable_time_windows():
 # 允许最早出仓后等待，出发上限不应误当成到货上限。
 def test_waiting_and_latest_departure():
     p = case(1)
-    p["latestShippingDate"] = "2026-10-21 11:05"
-    p["dnSiteVoList"][0]["timeWindow"] = ["2026-10-21 14:00", "2026-10-21 15:00"]
+    p["latestShippingDate"] = 665
+    p["dnSiteVoList"][0]["timeWindow"] = [840, 900]
     r = run(p)
-    assert r["routes"][0]["departure_date"] == "2026-10-21 11:00:00"
-    assert r["routes"][0]["siteDetails"][0]["eta"] == "2026-10-21 14:00:00"
+    assert r["routes"][0]["departure_date"] == 660
+    assert r["routes"][0]["siteDetails"][0]["eta"] == 840
 
 
 # 旧版请求不带出仓时间、卸货时长、耗时和时间窗，输出也不含时间字段。
@@ -223,7 +223,7 @@ def test_legacy_request_ignores_time_windows():
     p = case(2)
     del p["earliestShippingDate"]
     p["dnSiteVoList"][0]["timeWindow"] = []
-    p["dnSiteVoList"][1]["timeWindow"] = ["2000-01-01 00:00", "2000-01-01 00:01"]
+    p["dnSiteVoList"][1]["timeWindow"] = [0, 1]
     r = run(p)
     assert r["servedOrderCount"] == 2 and not r["rejectedOrders"]
     assert "siteDetails" not in r["routes"][0]
@@ -247,7 +247,7 @@ def test_timed_request_still_requires_duration():
     assert solve(p)["status"] == "INVALID_INPUT"
     p = case(1)
     del p["earliestShippingDate"]
-    p["latestShippingDate"] = "2026-10-21 11:05"
+    p["latestShippingDate"] = 665
     assert solve(p)["status"] == "INVALID_INPUT"
 
 
@@ -340,8 +340,8 @@ def test_early_arrival_waits_and_outputs_service_start_only():
     p = case(3)
     for dn in p["dnSiteVoList"][:2]:
         dn["siteCode"] = "shared"
-        dn["timeWindow"] = ["2026-10-21 14:00", "2026-10-21 14:01"]
-    p["dnSiteVoList"][2]["timeWindow"] = ["2026-10-21 14:31", "2026-10-21 14:31"]
+        dn["timeWindow"] = [840, 841]
+    p["dnSiteVoList"][2]["timeWindow"] = [871, 871]
     r = run(p)
     assert r["vehicleCount"] == 1
     route = r["routes"][0]
@@ -357,9 +357,9 @@ def test_early_arrival_waits_and_outputs_service_start_only():
     assert route["siteAddresses"] == [d["siteAddress"] for d in route["siteDetails"]]
     details = {d["siteAddress"]: d["eta"] for d in route["siteDetails"]}
     assert details == {
-        "D0": "2026-10-21 14:00:00",
-        "D1": "2026-10-21 14:00:00",
-        "D2": "2026-10-21 14:31:00",
+        "D0": 840,
+        "D1": 840,
+        "D2": 871,
     }
     for detail in route["siteDetails"]:
         assert set(detail) == {"siteAddress", "eta"}
@@ -395,5 +395,5 @@ def test_cli_default_array_and_full_report(capsys):
 # 起止相同的单点时间窗合法，不能当空窗口剔除。
 def test_single_point_window_is_valid():
     p = case(1)
-    p["dnSiteVoList"][0]["timeWindow"] = ["2026-10-21 12:00", "2026-10-21 12:00"]
+    p["dnSiteVoList"][0]["timeWindow"] = [720, 720]
     assert run(p)["rejectedOrders"] == []

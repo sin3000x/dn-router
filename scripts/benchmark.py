@@ -24,7 +24,7 @@ def generate(n: int, seed: int) -> dict[str, Any]:
             "from": a,
             "to": b,
             "planDistance": (d := round(math.dist(points[i], points[j]), 3)),
-            "duration": math.ceil(d * 60),
+            "duration": math.ceil(d),
         }
         for i, a in enumerate(ids)
         for j, b in enumerate(ids)
@@ -34,8 +34,8 @@ def generate(n: int, seed: int) -> dict[str, Any]:
         "sourceLocation": "DEPOT",
         "sourceLatitude": 0,
         "sourceLongitude": 0,
-        "earliestShippingDate": "2026-10-21 08:00",
-        "unloadingTime": 0.25,
+        "earliestShippingDate": 480,
+        "unloadingTime": 15,
         "maxSiteQty": 5,
         "quotationModel": "city",
         "lonAndLatCombination": 0,
@@ -50,7 +50,7 @@ def generate(n: int, seed: int) -> dict[str, Any]:
                 "deliveryLongitude": points[i + 1][1],
                 "totalGrossVolume": 1,
                 "totalGrossWeight": 100,
-                "timeWindow": ["2026-10-21 10:00", "2026-10-21 18:00"],
+                "timeWindow": [600, 1080],
             }
             for i in range(n)
         ],

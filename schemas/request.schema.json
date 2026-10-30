@@ -64,8 +64,7 @@
           "anyOf": [
             {
               "items": {
-                "format": "date-time",
-                "type": "string"
+                "type": "integer"
               },
               "type": "array"
             },
@@ -236,23 +235,15 @@
       "type": "array"
     },
     "unloadingTime": {
-      "anyOf": [
-        {
-          "minimum": 0.0,
-          "type": "number"
-        },
-        {
-          "type": "string"
-        }
-      ],
-      "default": "0",
-      "title": "Unloadingtime"
+      "default": 0,
+      "minimum": 0,
+      "title": "Unloadingtime",
+      "type": "integer"
     },
     "earliestShippingDate": {
       "anyOf": [
         {
-          "format": "date-time",
-          "type": "string"
+          "type": "integer"
         },
         {
           "type": "null"
@@ -264,8 +255,7 @@
     "latestShippingDate": {
       "anyOf": [
         {
-          "format": "date-time",
-          "type": "string"
+          "type": "integer"
         },
         {
           "type": "null"

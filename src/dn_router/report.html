@@ -149,13 +149,13 @@ dialog textarea{display:block;width:100%;height:50vh;border:0;border-top:1px sol
 <button class="btn icon" type="button" id="restart" aria-label="回到起点" title="回到起点"><svg viewBox="0 0 16 16"><path d="M3 2h2v12H3zM14 2.5v11L6 8z"/></svg></button>
 <input id="slider" type="range" min="0" max="0" step="1" value="0" aria-label="配送时间">
 <output class="clock" id="clock"></output>
-<select id="speed" class="field" aria-label="播放速度"><option value="60">1 分钟/秒</option><option value="300" selected>5 分钟/秒</option><option value="900">15 分钟/秒</option><option value="3600">1 小时/秒</option></select>
+<select id="speed" class="field" aria-label="播放速度（每秒推进的时间单位）"><option value="1">1 /秒</option><option value="5" selected>5 /秒</option><option value="15">15 /秒</option><option value="60">60 /秒</option></select>
 </div>
 <div class="map-foot"><span>经纬度直线示意，不代表道路；开放路线止于末站，不绘制返仓。车辆位置按时间插值。</span><span class="warn" id="mapnote"></span></div>
 </section>
 <section class="card matrix-card" id="matrix-card" hidden aria-label="距离矩阵"><div class="matrix-body">
 <div class="card-head"><div><h2>距离矩阵</h2><div class="sub">原始输入 · 行 from，列 to · 蓝色为路线经过的边</div></div><button class="btn icon" type="button" id="matrix-close" aria-label="关闭距离矩阵">×</button></div>
-<div class="matrix-tools"><input id="matrix-filter" class="field" type="search" placeholder="筛选 DN 或 siteCode" aria-label="筛选 DN 或 siteCode"><select id="matrix-metric" class="field" aria-label="矩阵数值"><option value="distance">距离</option><option value="duration">耗时（分钟）</option></select><span class="small muted" id="matrix-note"></span></div>
+<div class="matrix-tools"><input id="matrix-filter" class="field" type="search" placeholder="筛选 DN 或 siteCode" aria-label="筛选 DN 或 siteCode"><select id="matrix-metric" class="field" aria-label="矩阵数值"><option value="distance">距离</option><option value="duration">耗时</option></select><span class="small muted" id="matrix-note"></span></div>
 <div class="matrix-scroll"><table class="matrix num" id="matrix"></table></div></div></section>
 </div>
 
@@ -193,17 +193,15 @@ const PHASE={travel:'行驶',wait:'等待',unload:'卸货'};
 let W=960,H=520;
 
 // 当前报告与视图状态；selected 为 -1 时展示全部路线，缩放与平移只改变地图视图。
-let data=null,result={},routes=[],timeline=null,total=0,originDate=new Date(0),baseDay='';
+let data=null,result={},routes=[],timeline=null,total=0,origin=0;
 let selected=-1,hovered=-1,zoom=1,pan=[0,0],drag=null,pickedIds=new Set();
 let currentTime=0,playing=false,frame=0,lastFrame=0;
 
 // 装入一份报告并重建全部视图；在线模式每次求解后调用。
 function render(d){
-  pause();data=d;result=d.result||{};routes=result.routes||[];timeline=d.timeline||null;total=timeline?.durationSeconds||0;
-  // Python 给出相对业务当地起点的秒数；这里只借用 UTC 方法格式化墙上时钟，避免浏览器时区或夏令时干扰。
-  const o=(timeline?.startTime||'2000-01-01 00:00:00').match(/\d+/g).map(Number);
-  originDate=new Date(Date.UTC(o[0],o[1]-1,o[2],o[3]||0,o[4]||0,o[5]||0));
-  baseDay=(timeline?.startTime||d.request?.earliestShippingDate||'').slice(0,10);
+  pause();data=d;result=d.result||{};routes=result.routes||[];timeline=d.timeline||null;total=timeline?.duration||0;
+  // 时间是调用方约定单位的整数，页面不换算；时间轴内部用相对 startTime 的偏移。
+  origin=timeline?.startTime||0;
   currentTime=0;selected=-1;hovered=-1;
   $('welcome').hidden=true;$('report').hidden=false;
   const status=result.status||'UNKNOWN';
@@ -235,11 +233,11 @@ const countMode=m=>({0:'siteCode',1:'坐标'})[m]??'DN';
 function requestInfo(){
   const q=data.request||{},root=$('params');root.replaceChildren();
   // 折叠时这一行就是请求摘要，展开后再看全部参数。
-  $('request-sub').textContent=[fmt(q.dnCount)+' DN',fmt(q.siteCodeCount)+' 个 siteCode',fmt(data.vehicles.length)+' 种车型',q.earliestShippingDate?'出仓 '+q.earliestShippingDate:'不计时间','站点上限 '+(q.maxSiteQty||'不限'),fmt(q.legCount)+' 条矩阵边'].join(' · ');
+  $('request-sub').textContent=[fmt(q.dnCount)+' DN',fmt(q.siteCodeCount)+' 个 siteCode',fmt(data.vehicles.length)+' 种车型',q.earliestShippingDate!=null?'出仓 '+q.earliestShippingDate:'不计时间','站点上限 '+(q.maxSiteQty||'不限'),fmt(q.legCount)+' 条矩阵边'].join(' · ');
   const item=(label,value)=>{const d=el('div',null,root);el('dt',label,d);el('dd',value,d);};
   item('仓库',q.sourceLocation??'—');
-  item('出仓',q.earliestShippingDate?q.earliestShippingDate+(q.latestShippingDate?' ~ '+q.latestShippingDate:''):'不计时间');
-  if(q.earliestShippingDate){item('卸货',fmt((q.unloadingTime??0)*60,1)+' 分钟');item('时间窗',q.enableTimeWindows===false?'忽略':'启用');}
+  item('出仓',q.earliestShippingDate!=null?q.earliestShippingDate+(q.latestShippingDate!=null?' ~ '+q.latestShippingDate:''):'不计时间');
+  if(q.earliestShippingDate!=null){item('卸货',fmt(q.unloadingTime??0));item('时间窗',q.enableTimeWindows===false?'忽略':'启用');}
   item('停靠合并','siteCode');
   item('站点计数',countMode(q.lonAndLatCombination)+(q.maxSiteQty?' · 上限 '+q.maxSiteQty:' · 不限'));
   item('单段距离上限',Number(q.siteDistanceLimit)>0?fmt(q.siteDistanceLimit):'不限');
@@ -330,7 +328,7 @@ function draw(){
   list.forEach(({r,i})=>{const st=stateAt(i);if(!st.point||!st.kind)return;const [x,y]=xy(st.point),c=color(i),key=st.point.join(','),slot=slots.get(key)||0;slots.set(key,slot+1);
     const g=sv('g',{'data-route':r.routeId,'data-state':st.kind,opacity:fade(i)},vehicles);
     sv('circle',{cx:x,cy:y,r:16,fill:'var(--surface)',opacity:.92,stroke:c,'stroke-width':2,'stroke-dasharray':st.kind==='wait'?'4 3':''},g);sv('rect',{x:x-6,y:y-6,width:12,height:12,rx:3,fill:c},g);
-    sv('title',{},g).textContent=r.routeId+' · '+st.label+' · '+wallTime(currentTime);
+    sv('title',{},g).textContent=r.routeId+' · '+st.label+' · '+at(currentTime);
     const right=x>W-180,t=sv('text',{x:right?x-22:x+22,y:y+26+slot*18,'text-anchor':right?'end':'start',class:'strong'},g);t.textContent=r.routeId;});
 }
 
@@ -372,9 +370,8 @@ $('stop-copy').onclick=()=>copyAndToast(stopText);
 new ResizeObserver(()=>{if(data)draw();}).observe($('map'));
 $('zoom-in').onclick=()=>zoomAt([W/2,H/2],1.4);$('zoom-out').onclick=()=>zoomAt([W/2,H/2],1/1.4);$('reset').onclick=()=>{zoom=1;pan=[0,0];draw();};
 
-// 通过统一起点加相对秒数显示日期，跨午夜时自然切换日期。
-const z2=n=>String(n).padStart(2,'0');
-function wallTime(sec,short=false){const d=new Date(originDate.getTime()+Math.floor(sec)*1000);return (short?'':d.getUTCFullYear()+'-'+z2(d.getUTCMonth()+1)+'-'+z2(d.getUTCDate())+' ')+z2(d.getUTCHours())+':'+z2(d.getUTCMinutes())+(short?'':':'+z2(d.getUTCSeconds()));}
+// 偏移加回起点得到输入口径的时间点；播放中的小数偏移向下取整。
+const at=t=>String(origin+Math.floor(t));
 
 // 阶段使用左闭右开区间；终点直接标记完成，零时长阶段不参与插值。
 function stateAt(i){
@@ -401,7 +398,7 @@ document.addEventListener('keydown',e=>{if(e.code!=='Space'||!data||e.target.clo
 
 // 统一刷新时钟、游标、车辆状态和停靠高亮，确保各视图使用同一时刻。
 function updateTime(){
-  $('clock').textContent=timeline?wallTime(currentTime):'没有可播放的时间表';
+  $('clock').textContent=timeline?at(currentTime):'没有可播放的时间表';
   $('slider').value=String(Math.round(currentTime));$('slider').setAttribute('aria-valuetext',$('clock').textContent);
   const pct=total?currentTime/total*100:0;document.querySelectorAll('.cursor').forEach(e=>e.style.left=pct+'%');
   const states=routes.map((_,i)=>stateAt(i));
@@ -410,12 +407,12 @@ function updateTime(){
   document.querySelectorAll('tr[data-route]').forEach(e=>{const st=states[Number(e.dataset.route)];e.classList.toggle('active',st.kind!=null&&st.kind!=='travel'&&st.stopIndex===Number(e.dataset.stop));});
 }
 
-// 刻度按墙上时钟取整，步长随总时长自适应；跨日刻度显示日期。
+// 刻度对齐到时间点的整倍数，步长取 1/2/5 × 10^k，使刻度不超过 8 个。
 function ticks(){
   if(total<=0)return [];
-  const step=[5,10,15,30,60,120,180,240,360,720,1440].map(m=>m*60).find(s=>total/s<=8)||Math.ceil(total/8/86400)*86400;
-  const day=originDate.getUTCHours()*3600+originDate.getUTCMinutes()*60+originDate.getUTCSeconds(),out=[];
-  for(let t=Math.ceil(day/step)*step-day;t<=total;t+=step){const d=new Date(originDate.getTime()+t*1000);out.push([t,d.getUTCHours()||d.getUTCMinutes()?wallTime(t,true).slice(-5):z2(d.getUTCMonth()+1)+'-'+z2(d.getUTCDate())]);}
+  let step=1;for(let k=1;total/step>8;k++)step=[1,2,5][k%3]*10**Math.floor(k/3);
+  const out=[];
+  for(let t=Math.ceil(origin/step)*step-origin;t<=total;t+=step)out.push([t,at(t)]);
   return out;
 }
 
@@ -436,18 +433,17 @@ function drawGantt(){
     bar.onclick=e=>{const rect=bar.getBoundingClientRect();if(selected!==i)select(i);setTime((e.clientX-rect.left)/rect.width*total);};
     for(const seg of track.segments){if(seg.end<=seg.start)continue;
       const stop=r.stops[seg.stopIndex],b=el('button',null,bar,'phase '+seg.kind);b.type='button';b.style.left=pos(seg.start);b.style.width=pos(seg.end-seg.start);b.dataset.start=seg.start;b.dataset.end=seg.end;
-      const label=r.routeId+' · '+PHASE[seg.kind]+' · '+stop.siteCode+'\n'+wallTime(seg.start)+' → '+wallTime(seg.end)+'（'+fmt((seg.end-seg.start)/60,1)+' 分钟）';
+      const label=r.routeId+' · '+PHASE[seg.kind]+' · '+stop.siteCode+'\n'+at(seg.start)+' → '+at(seg.end)+'（时长 '+fmt(seg.end-seg.start)+'）';
       b.title=label;b.setAttribute('aria-label',label);el('span',PHASE[seg.kind]+' '+stop.siteCode,b);
       b.onclick=e=>{e.stopPropagation();if(selected!==i)select(i);setTime(seg.start);};}
-    if(track.start===track.end){const s=el('span','◆',bar,'instant');s.style.left=pos(track.end);s.title='瞬时完成 '+wallTime(track.end);}
+    if(track.start===track.end){const s=el('span','◆',bar,'instant');s.style.left=pos(track.end);s.title='瞬时完成 '+at(track.end);}
     el('i',null,bar,'cursor');
   });
 }
 
-// 与出仓同一天的时刻只显示时分，跨日补上月-日；完整时间放在悬浮提示里。
-function short(t){if(!t)return '—';const m=String(t).match(/^(\d{4}-(\d\d-\d\d))[ T](\d\d:\d\d)/);return m?(m[1]===baseDay?'':m[2]+' ')+m[3]:String(t);}
+// 时间点原样显示，不加千分位，便于与输入核对。
+const short=t=>t==null?'—':String(t);
 const windowText=w=>Array.isArray(w)?(w.length?w.map(short).join(' → '):'空'):null;
-function timeCell(t,tr){const td=el('td',short(t),tr,'num');if(t)td.title=t;}
 function syncDetailsToggle(){const all=[...$('details').querySelectorAll('details')];$('details-toggle').hidden=all.length<2;$('details-toggle').textContent=all.length&&all.every(d=>d.open)?'全部收起':'全部展开';}
 $('details-toggle').onclick=()=>{const all=[...$('details').querySelectorAll('details')],open=!all.every(d=>d.open);all.forEach(d=>d.open=open);syncDetailsToggle();};
 
@@ -463,7 +459,7 @@ function details(){
     const windows=new Map();for(const s of r.stops)for(const id of s.orderReleaseIds){const w=windowText(data.orders?.[id]?.timeWindow);if(w!=null)windows.set(w,(windows.get(w)||0)+1);}
     const common=[...windows].sort((a,b)=>b[1]-a[1])[0]?.[0]??null;
     const h=el('div',null,sum,'rd-head');el('span',null,h,'dot');el('h3',r.routeId+' · '+r.vehicleTypeName,h);
-    el('div',(r.departureTime?'出仓 '+short(r.departureTime)+' → 完成 '+short(r.completionTime)+'　':'')+'距离 '+fmt(r.totalDistance)+'　停靠 '+fmt(r.physicalStopCount)+' 次 · '+dnCount(r)+' DN　站点计数 '+fmt(r.siteCount)+(data.request?.maxSiteQty?' / '+data.request.maxSiteQty:'')+'（'+countMode(data.request?.lonAndLatCombination)+'）'+(common!=null?'　时间窗 '+common:''),sum,'rd-meta');
+    el('div',(r.departureTime!=null?'出仓 '+short(r.departureTime)+' → 完成 '+short(r.completionTime)+'　':'')+'距离 '+fmt(r.totalDistance)+'　停靠 '+fmt(r.physicalStopCount)+' 次 · '+dnCount(r)+' DN　站点计数 '+fmt(r.siteCount)+(data.request?.maxSiteQty?' / '+data.request.maxSiteQty:'')+'（'+countMode(data.request?.lonAndLatCombination)+'）'+(common!=null?'　时间窗 '+common:''),sum,'rd-meta');
     const ld=el('div',null,sum,'loads');
     for(const l of loads(r)){const d=el('div',null,ld),row=el('div',null,d,'load-row');el('span',l.label,row);el('b',fmt(l.used)+' / '+fmt(l.cap)+(l.ratio==null?'':'　'+fmt(l.ratio*100,1)+'%'),row);if(l.ratio!=null)el('i',null,el('div',null,d,'meter')).style.width=Math.min(100,l.ratio*100)+'%';}
     const table=el('table',null,el('div',null,box,'table-scroll')),head=el('tr',null,el('thead',null,table));
@@ -472,8 +468,8 @@ function details(){
     r.stops.forEach((s,j)=>{const tr=el('tr',null,body);tr.dataset.route=i;tr.dataset.stop=j;el('span',j+1,el('td',null,tr),'seq');
       const td=el('td',null,tr);copyChip(s.siteCode,td,'site');el('span','　'+s.orderReleaseIds.length+' DN',td,'small muted');
       for(const id of s.orderReleaseIds){const o=data.orders?.[id]||{},w=windowText(o.timeWindow),line=el('div',null,td,'dn');copyChip(id,line);line.append('　体积 '+fmt(o.totalGrossVolume)+' · 重量 '+fmt(o.totalGrossWeight)+(w!=null&&w!==common?' · 窗口 '+w:''));}
-      el('td',fmt(s.legDistance),tr,'num');el('td',s.legDurationSeconds==null?'—':fmt(s.legDurationSeconds/60,1)+' 分',tr,'num');timeCell(s.arrivalTime,tr);timeCell(s.departureTime,tr);
-      el('td',fmt(s.waitingBeforeArrivalSeconds/60,1)+' 分',tr,'num');el('td',fmt(s.unloadingSeconds/60,1)+' 分',tr,'num');});
+      el('td',fmt(s.legDistance),tr,'num');el('td',fmt(s.legDuration),tr,'num');el('td',short(s.arrivalTime),tr,'num');el('td',short(s.departureTime),tr,'num');
+      el('td',fmt(s.waitingBeforeArrival),tr,'num');el('td',fmt(s.unloading),tr,'num');});
   });
   syncDetailsToggle();
 }
@@ -503,7 +499,7 @@ function matrix(){
       // 开放路线不返仓，到仓库的边缺失属正常情况，不按缺失告警。
       if(v==null&&b===depot){td.textContent='—';td.className='diag';td.title='开放路线不返仓';continue;}
       if(v==null){td.textContent='缺';td.className='miss';td.title=a+' → '+b+' 矩阵中缺失';continue;}
-      td.textContent=byDuration?fmt(v/60,1):fmt(v);td.title=a+' → '+b;if(edges.has(a+'\u0000'+b))td.className='on-route';if(pickedIds.has(a)||pickedIds.has(b))td.classList.add('picked');}}
+      td.textContent=fmt(v);td.title=a+' → '+b;if(edges.has(a+'\u0000'+b))td.className='on-route';if(pickedIds.has(a)||pickedIds.has(b))td.classList.add('picked');}}
   // 地图上点中的站点在矩阵内滚动到可见位置；只滚动矩阵容器，不带动整页。
   const box=table.parentElement,row=table.querySelector('tbody th.picked'),col=table.querySelector('thead th.picked');
   if(row)box.scrollTop=Math.max(0,row.offsetTop-table.tHead.offsetHeight);

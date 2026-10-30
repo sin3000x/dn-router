@@ -3,16 +3,14 @@
 内部约定：
 - 节点编号 0 为仓库，1..N 对应 Problem.dns 的下标加一；
 - 车型用 Problem.vehicle_types（已按等级从小到大排序）的下标表示；
-- 时间均为相对最早出仓时刻的整数秒；旧版不考虑时间的请求耗时、卸货均为零，
-  时间窗不限。
+- 时间均为相对最早出仓时刻的整数，单位与输入一致，不做换算；旧版不考虑时间的请求
+  耗时、卸货均为零，时间窗不限。
 """
 
 import gc
-import math
 from collections.abc import Iterable, Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
-from datetime import datetime
 from decimal import Decimal
 from itertools import groupby, pairwise
 from typing import NamedTuple
@@ -48,7 +46,7 @@ class Route(NamedTuple):
 
 
 class Visit(NamedTuple):
-    """一次停靠的时间点，均为相对最早出仓的秒；公开 eta 取 start（开始卸货）。"""
+    """一次停靠的时间点，均为相对最早出仓的偏移；公开 eta 取 start（开始卸货）。"""
 
     arrival: int
     start: int
@@ -94,12 +92,12 @@ class Problem:
         vehicle_types: 车型，按 (容积, 载重, 名称) 从小到大排序，下标即车型等级。
         distance: 距离矩阵 [from][to]，单位为输入距离 × DIST_SCALE 的整数；
             返仓边和同站 DN 之间为 0。
-        duration: 行驶耗时矩阵 [from][to]，整数秒；返仓边和同站 DN 之间为 0。
-        windows: 节点 0..N 的开始卸货区间 (最早, 最晚)，相对最早出仓的秒；
+        duration: 行驶耗时矩阵 [from][to]，整数；返仓边和同站 DN 之间为 0。
+        windows: 节点 0..N 的开始卸货区间 (最早, 最晚)，相对最早出仓的偏移；
             仓库及无时间窗的 DN 为 (0, horizon)。
-        horizon: 时间上界（秒），覆盖全部可能的行驶、等待与卸货。
-        latest_departure: 最晚出仓时刻（秒）；请求未给出时等于 horizon。
-        unload_seconds: 每次实际停靠的卸货时长，整数秒（向上取整）。
+        horizon: 时间上界，覆盖全部可能的行驶、等待与卸货。
+        latest_departure: 最晚出仓时刻的偏移；请求未给出时等于 horizon。
+        unload: 每次实际停靠的卸货时长。
         rejected: 预处理剔除的订单，元素为 {"orderReleaseId": ..., "code": ...}。
         warnings: 归一化过程中产生的提示文本。
     """
@@ -112,7 +110,7 @@ class Problem:
     windows: list[Window]
     horizon: int
     latest_departure: int
-    unload_seconds: int
+    unload: int
     rejected: list[dict[str, str]]
     warnings: list[str]
 
@@ -134,17 +132,18 @@ class Problem:
             request.vehicleTypeVoList,
             key=lambda v: (v.totalVolume, v.totalWeight, v.vehicleTypeName),
         )
-        # 小时换算成秒后向上取整，避免低估卸货占用时间。
         # 旧版请求不考虑时间，忽略卸货时长。
-        unload_seconds = math.ceil(request.unloadingTime * 3600) if request.timed else 0
+        unload = request.unloadingTime if request.timed else 0
 
+        # 旧版请求没有出仓上限，这里只有时间请求才会用到零点。
         latest = request.latestShippingDate
-        latest_departure = _seconds(request=request, moment=latest) if latest else 0
+        zero = request.earliestShippingDate or 0
+        latest_departure = 0 if latest is None else latest - zero
 
         # 时间上界覆盖最晚窗口、全部可能行驶及卸货，允许无时间窗订单等待。
         longest_leg = max(map(max, duration))
         horizon = max([0, latest_departure, *(b[1] for b in bounds if b)])
-        horizon += len(distance) * (longest_leg + unload_seconds) + 1
+        horizon += len(distance) * (longest_leg + unload) + 1
         if horizon >= LIMIT:
             raise InputError("time range too large")
         _check_load_precision(dns=dns, vehicle_types=vehicle_types)
@@ -161,8 +160,8 @@ class Problem:
             duration=duration,
             windows=windows,
             horizon=horizon,
-            latest_departure=latest_departure if latest else horizon,
-            unload_seconds=unload_seconds,
+            latest_departure=horizon if latest is None else latest_departure,
+            unload=unload,
             rejected=rejected,
             warnings=warnings,
         )
@@ -208,7 +207,7 @@ class Problem:
             start = max(arrival, *(self.windows[i][0] for i in stop))
             if any(start > self.windows[i][1] for i in stop):
                 raise InputError("route time window violation")
-            finish = start + self.unload_seconds
+            finish = start + self.unload
             visits += [Visit(arrival=arrival, start=start, finish=finish)] * len(stop)
             time, previous = finish, stop[-1]
         return visits
@@ -278,11 +277,6 @@ def validate_routes(problem: Problem, routes: Iterable[Route]) -> None:
         raise InputError("mandatory DN omitted or duplicated")
 
 
-def _seconds(request: Request, moment: datetime) -> int:
-    assert request.earliestShippingDate is not None
-    return int((moment - request.earliestShippingDate).total_seconds())
-
-
 def _edges(request: Request, warnings: list[str]) -> Edges:
     """按 (from, to) 索引矩阵；允许完全相同的重复边，冲突时拒绝请求。"""
     edges: Edges = {}
@@ -310,7 +304,7 @@ def _eligible_dns(
     """仅剔除空时间窗、最早出仓直送仍超时的订单；矩阵缺失必须报错。
 
     旧版不考虑时间的请求忽略时间窗，也不要求 duration。
-    返回保留的 DN、对应时间窗（秒，None 表示不限）和被剔除的订单。
+    返回保留的 DN、对应时间窗（相对偏移，None 表示不限）和被剔除的订单。
     """
     dns: list[DN] = []
     bounds: list[Window | None] = []
@@ -333,10 +327,8 @@ def _eligible_dns(
         bound = None
         if window:
             assert edge.duration is not None
-            bound = (
-                _seconds(request=request, moment=window[0]),
-                _seconds(request=request, moment=window[1]),
-            )
+            zero = request.earliestShippingDate or 0
+            bound = (window[0] - zero, window[1] - zero)
             if edge.duration > bound[1]:
                 reject(dn=dn, code="DIRECT_TIME_WINDOW_UNREACHABLE")
                 continue
@@ -363,16 +355,16 @@ def _matrices(
                 continue
             b = ids[j]
             leg = edges.get((a, b))
-            seconds = leg.duration if leg and timed else 0
-            if leg is None or seconds is None:
+            travel = leg.duration if leg and timed else 0
+            if leg is None or travel is None:
                 raise InputError(f"missing directed matrix leg/duration: {a} -> {b}")
             # 同 siteCode 视为一次物理停靠，内部距离及行驶耗时统一归零。
             if site == sites[j]:
-                if leg.planDistance or seconds:
+                if leg.planDistance or travel:
                     warnings.append(f"SAME_SITE_TRAVEL_NORMALIZED: {a} -> {b}")
                 continue
             distance_row[j] = scaled(value=leg.planDistance, scale=DIST_SCALE)
-            duration_row[j] = seconds
+            duration_row[j] = travel
     return distance, duration
 
 

@@ -49,13 +49,14 @@
 
 ## 时间
 
-- 时间均为同一业务当地时间，不带时区，不换算 UTC（国家码不能唯一确定时区，例如巴西）。
+- 时间点和时长都是整数，单位由调用方统一约定（目前为分钟），服务不感知也不换算；
+  `earliestShippingDate`、`latestShippingDate`、`timeWindow`、`unloadingTime`、`duration`
+  以及输出的 `departure_date`、`eta` 都是同一单位。
 - 车辆在 `earliestShippingDate` 出仓。`latestShippingDate` 是出仓上限；因为允许提前到达等待，
   最早出仓总是可行，所以输出的 `departure_date` 恒为 `earliestShippingDate`。
 - 允许提前到达并等待。时间窗约束的是**开始卸货时间**（eta），不要求在窗口内卸完。
 - 下一站 eta ≥ 本站 eta + 卸货时长 + 行驶耗时。
 - 不输出物理到达时间。输出采用最早出仓、到站即尽早开工的时间表，不优化等待时长。
-- `unloadingTime` 单位为小时，换算秒后向上取整；`duration` 为整数秒。
 - `enableTimeWindows = false`：忽略所有 DN 时间窗（包括空窗，不剔除），出仓时间与卸货时长仍生效。
 - 旧版请求（缺少 `earliestShippingDate`）完全不考虑时间：耗时与卸货视为零、忽略时间窗（不剔除），
   不要求矩阵带 `duration`，输出不含 `departure_date` 和 `siteDetails`。

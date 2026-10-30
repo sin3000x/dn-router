@@ -3,7 +3,6 @@
 import json
 import math
 from collections.abc import Callable, Mapping
-from datetime import datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
@@ -15,7 +14,7 @@ Coordinate = list[float]
 
 
 def _timeline(routes: list[Json]) -> Json | None:
-    """按无时区的业务当地时间构建时间轴，不受主机时区或夏令时影响。
+    """以整数时间构建时间轴，单位与输入一致。
 
     先行驶后等待只是展示约定，真实等待位置未知。
     零时长阶段保留边界，不为播放虚构持续时间。
@@ -34,12 +33,12 @@ def _timeline(routes: list[Json]) -> Json | None:
     origin = min(r["start"] for r in valid)
     finish = max(r["end"] for r in valid)
 
-    def offset(t: datetime) -> float:
-        return (t - origin).total_seconds()
+    def offset(t: int) -> int:
+        return t - origin
 
     return {
-        "startTime": origin.isoformat(sep=" "),
-        "durationSeconds": offset(finish),
+        "startTime": origin,
+        "duration": offset(finish),
         "routes": [
             None
             if r is None
@@ -58,18 +57,16 @@ def _timeline(routes: list[Json]) -> Json | None:
 
 def _route_segments(route: Json) -> Json:
     """把一条路线拆成行驶、等待、卸货三段；时间不连贯时抛 ValueError。"""
-    start = datetime.fromisoformat(route["departureTime"])
-    end = datetime.fromisoformat(route["completionTime"])
-    if start.tzinfo is not None or end.tzinfo is not None or end < start:
-        raise ValueError("invalid local route times")
+    start, end = route["departureTime"], route["completionTime"]
+    if end < start:
+        raise ValueError("invalid route times")
     previous, segments = start, []
     for index, stop in enumerate(route["stops"]):
-        arrival = datetime.fromisoformat(stop["arrivalTime"])
-        departure = datetime.fromisoformat(stop["departureTime"])
-        wait = float(stop.get("waitingBeforeArrivalSeconds", 0))
-        if not math.isfinite(wait) or wait < 0:
+        arrival, departure = stop["arrivalTime"], stop["departureTime"]
+        wait = stop.get("waitingBeforeArrival", 0)
+        if wait < 0:
             raise ValueError("invalid waiting duration")
-        travel_end = arrival - timedelta(seconds=wait)
+        travel_end = arrival - wait
         if not previous <= travel_end <= arrival <= departure <= end:
             raise ValueError("nonchronological stop")
         # 每次停靠拆成行驶、等待、卸货三段，避免等待被重复计算。
@@ -109,33 +106,32 @@ def _display_routes(payload: Json, routes: list[Json]) -> list[Json]:
                 )
             )
             continue
-        previous_time = datetime.fromisoformat(route["departure_date"])
+        previous_time = route["departure_date"]
         previous_node = 0
         stops: list[Json] = []
         for detail in route["siteDetails"]:
             node, dn = orders[detail["siteAddress"]]
-            eta = datetime.fromisoformat(detail["eta"])
+            eta = detail["eta"]
             # 相邻同站 DN 合并展示，并检查共用 eta；不重复增加卸货时长。
             if stops and stops[-1]["siteCode"] == dn.siteCode:
-                if stops[-1]["arrivalTime"] != eta.isoformat(sep=" "):
+                if stops[-1]["arrivalTime"] != eta:
                     raise ValueError("same-stop DNs must share eta")
                 stops[-1]["orderReleaseIds"].append(dn.orderReleaseId)
             else:
                 # 从两次卸货间隔扣除行驶时间，剩余部分是展示用等待时间。
                 travel = problem.duration[previous_node][node]
-                wait = (eta - previous_time).total_seconds() - travel
+                wait = eta - previous_time - travel
                 if wait < 0:
                     raise ValueError("eta precedes unloading and travel completion")
-                departure = eta + timedelta(seconds=problem.unload_seconds)
+                departure = eta + problem.unload
                 stops.append(
                     {
                         "siteCode": dn.siteCode,
                         "orderReleaseIds": [dn.orderReleaseId],
-                        "arrivalTime": eta.isoformat(sep=" "),
-                        "serviceStartTime": eta.isoformat(sep=" "),
-                        "departureTime": departure.isoformat(sep=" "),
-                        "waitingBeforeArrivalSeconds": wait,
-                        "unloadingSeconds": problem.unload_seconds,
+                        "arrivalTime": eta,
+                        "departureTime": departure,
+                        "waitingBeforeArrival": wait,
+                        "unloading": problem.unload,
                         **_leg(
                             problem=problem, origin=previous_node, node=node, timed=True
                         ),
@@ -151,7 +147,7 @@ def _display_routes(payload: Json, routes: list[Json]) -> list[Json]:
                 "routeId": f"R{number}",
                 "vehicleTypeName": route["vehicle"],
                 "departureTime": route["departure_date"],
-                "completionTime": previous_time.isoformat(sep=" "),
+                "completionTime": previous_time,
                 "totalDistance": route["dist"],
                 "totalVolume": route["volume"],
                 "totalWeight": route["weight"],
@@ -167,7 +163,7 @@ def _leg(problem: Problem, origin: int, node: int, *, timed: bool) -> Json:
     """上一停靠到本停靠的距离与耗时，取求解实际使用的归一化矩阵；旧版请求不计耗时。"""
     return {
         "legDistance": Decimal(problem.distance[origin][node]) / DIST_SCALE,
-        "legDurationSeconds": problem.duration[origin][node] if timed else None,
+        "legDuration": problem.duration[origin][node] if timed else None,
     }
 
 

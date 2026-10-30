@@ -13,8 +13,8 @@ JSON Schema 见 `schemas/request.schema.json`（由 `models.Request` 生成）�
 
 ## 请求
 
-请求及嵌套对象允许携带额外字段，解析时忽略。日期格式 `YYYY-MM-DD HH:mm` 或 `YYYY-MM-DD HH:mm:ss`，
-均为不带时区的业务当地时间，不允许小数秒。
+请求及嵌套对象允许携带额外字段，解析时忽略。时间点和时长都是整数，单位由调用方统一约定
+（目前为分钟），服务不做换算；输出时间沿用同一单位。
 
 ### 旧版不考虑时间的请求
 
@@ -28,9 +28,9 @@ JSON Schema 见 `schemas/request.schema.json`（由 `models.Request` 生成）�
 |---|---|---|---|---|
 | `sourceLocation` | string | 是 | | 仓库 ID，即矩阵中仓库的 `from` 键；不能与任何 DN ID 相同 |
 | `sourceLatitude` / `sourceLongitude` | number | 是 | | 仓库坐标，仅用于初解扫描排序和可视化 |
-| `earliestShippingDate` | datetime \| null | 否 | null | 最早出仓时间，也是全部时间计算的零点。缺省即[旧版不考虑时间的请求](#旧版不考虑时间的请求) |
-| `latestShippingDate` | datetime \| null | 否 | null | 最晚出仓时间；须同时给出 `earliestShippingDate` 且不得早于它 |
-| `unloadingTime` | number ≥ 0 | 否 | 0 | 每次停靠的卸货时长，**单位小时**，换算秒后向上取整 |
+| `earliestShippingDate` | int \| null | 否 | null | 最早出仓时间，也是全部时间计算的零点。缺省即[旧版不考虑时间的请求](#旧版不考虑时间的请求) |
+| `latestShippingDate` | int \| null | 否 | null | 最晚出仓时间；须同时给出 `earliestShippingDate` 且不得早于它 |
+| `unloadingTime` | int ≥ 0 | 否 | 0 | 每次停靠的卸货时长 |
 | `enableTimeWindows` | bool | 否 | true | false 时忽略全部 DN 时间窗 |
 | `dnSiteVoList` | DN[] | 是 | | 待配送 DN，可为空列表 |
 | `vehicleTypeVoList` | VehicleType[] | 是 | | 车型，至少一个；每种车型数量不限 |
@@ -52,7 +52,7 @@ JSON Schema 见 `schemas/request.schema.json`（由 `models.Request` 生成）�
 | `siteCode` | string | 是 | 实际卸货地点；同 siteCode 必须是同一物理地点 |
 | `deliveryLatitude` / `deliveryLongitude` | number | 是 | 范围 [-90, 90] / [-180, 180] |
 | `totalGrossVolume` / `totalGrossWeight` | number ≥ 0 | 是 | 最多 6 位小数 |
-| `timeWindow` | [start, end] \| [] \| null | 否 | **开始卸货**时间窗。null/缺省：不限；`[]` 或 start>end：空窗，剔除；start=end：合法单点 |
+| `timeWindow` | [int, int] \| [] \| null | 否 | **开始卸货**时间窗。null/缺省：不限；`[]` 或 start>end：空窗，剔除；start=end：合法单点 |
 
 ### 车型（`vehicleTypeVoList[]`）
 
@@ -68,7 +68,7 @@ JSON Schema 见 `schemas/request.schema.json`（由 `models.Request` 生成）�
 |---|---|---|---|
 | `from` / `to` | string | 是 | 仓库 ID 或 DN 号（`orderReleaseId`），**不是** siteCode |
 | `planDistance` | number ≥ 0 | 是 | 业务距离单位，最多 3 位小数 |
-| `duration` | int ≥ 0 | 求解所需边必填（旧版请求可省略） | 行驶耗时，整数秒 |
+| `duration` | int ≥ 0 | 求解所需边必填（旧版请求可省略） | 行驶耗时 |
 | `beginSiteCode` / `endSiteCode` | string | 否 | 附带标签，不作索引 |
 
 必须提供：仓库 → 每个保留 DN、每个保留 DN → 其他保留 DN 的有向边，且带 `duration`（旧版请求不要求）。
@@ -85,12 +85,12 @@ JSON Schema 见 `schemas/request.schema.json`（由 `models.Request` 生成）�
 |---|---|---|
 | `dist` | number | 路线总距离：仓库到首站 + 站间，不含返仓；单位同输入 |
 | `siteAddresses` | string[] | 按配送顺序的 **DN 号**（不是 siteCode） |
-| `departure_date` | string | 出仓时间，恒为 `earliestShippingDate`；旧版请求不输出 |
-| `siteDetails` | {siteAddress, eta}[] | 每个 DN 一项，顺序同 `siteAddresses`；`eta` 为**开始卸货时间**；旧版请求不输出 |
+| `departure_date` | int | 出仓时间，恒为 `earliestShippingDate`；旧版请求不输出 |
+| `siteDetails` | {siteAddress, eta: int}[] | 每个 DN 一项，顺序同 `siteAddresses`；`eta` 为**开始卸货时间**；旧版请求不输出 |
 | `vehicle` | string | 车型名称（`vehicleTypeName`），取装得下本路线的最小车型 |
 | `volume` / `weight` | number | 本车 DN 的体积、重量之和 |
 
-时间统一为 `YYYY-MM-DD HH:mm:ss`，保留行驶耗时带来的秒数。同站多个 DN 逐单输出，共用一个 `eta`。
+同站多个 DN 逐单输出，共用一个 `eta`。
 完整示例见 `examples/output-multi.json`。
 
 ### 完整报告

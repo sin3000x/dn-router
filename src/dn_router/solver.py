@@ -7,7 +7,6 @@
 
 from collections import defaultdict
 from collections.abc import Callable, Iterable
-from datetime import timedelta
 from time import perf_counter
 from typing import Any, Literal, NamedTuple, NotRequired, TypedDict, Unpack
 
@@ -43,7 +42,7 @@ Status = Literal[
 
 class SiteDetail(TypedDict):
     siteAddress: str
-    eta: str
+    eta: int
 
 
 class RouteOutput(TypedDict):
@@ -51,7 +50,7 @@ class RouteOutput(TypedDict):
 
     dist: float
     siteAddresses: list[str]
-    departure_date: NotRequired[str]
+    departure_date: NotRequired[int]
     siteDetails: NotRequired[list[SiteDetail]]
     vehicle: str
     volume: float
@@ -105,7 +104,7 @@ class Result(_Fields):
 
 
 class _Schedule(TypedDict, total=False):
-    departure_date: str
+    departure_date: int
     siteDetails: list[SiteDetail]
 
 
@@ -284,14 +283,11 @@ def _schedule_output(problem: Problem, nodes: list[int]) -> _Schedule:
     if departure is None:
         return {}
 
-    def timestamp(seconds: int) -> str:
-        return (departure + timedelta(seconds=seconds)).isoformat(sep=" ")
-
     visits = problem.schedule(nodes)
     return {
-        "departure_date": timestamp(0),
+        "departure_date": departure,
         "siteDetails": [
-            {"siteAddress": problem.dn(i).orderReleaseId, "eta": timestamp(v.start)}
+            {"siteAddress": problem.dn(i).orderReleaseId, "eta": departure + v.start}
             for i, v in zip(nodes, visits, strict=True)
         ],
     }

@@ -10,25 +10,25 @@
       "from": "PA_CROSSDO",
       "to": "123234768",
       "planDistance": 100,
-      "duration": 600
+      "duration": 10
     },
     {
       "from": "PA_CROSSDO",
       "to": "DN2",
       "planDistance": 100,
-      "duration": 600
+      "duration": 10
     },
     {
       "from": "PA_CROSSDO",
       "to": "DN3",
       "planDistance": 100,
-      "duration": 600
+      "duration": 10
     },
     {
       "from": "123234768",
       "to": "PA_CROSSDO",
       "planDistance": 10,
-      "duration": 600
+      "duration": 10
     },
     {
       "from": "123234768",
@@ -46,13 +46,13 @@
       "from": "123234768",
       "to": "DN3",
       "planDistance": 10,
-      "duration": 600
+      "duration": 10
     },
     {
       "from": "DN2",
       "to": "PA_CROSSDO",
       "planDistance": 10,
-      "duration": 600
+      "duration": 10
     },
     {
       "from": "DN2",
@@ -70,25 +70,25 @@
       "from": "DN2",
       "to": "DN3",
       "planDistance": 10,
-      "duration": 600
+      "duration": 10
     },
     {
       "from": "DN3",
       "to": "PA_CROSSDO",
       "planDistance": 10,
-      "duration": 600
+      "duration": 10
     },
     {
       "from": "DN3",
       "to": "123234768",
       "planDistance": 10,
-      "duration": 600
+      "duration": 10
     },
     {
       "from": "DN3",
       "to": "DN2",
       "planDistance": 10,
-      "duration": 600
+      "duration": 10
     },
     {
       "from": "DN3",
@@ -97,8 +97,8 @@
       "duration": 0
     }
   ],
-  "unloadingTime": 0.5,
-  "earliestShippingDate": "2026-10-21 11:00",
+  "unloadingTime": 30,
+  "earliestShippingDate": 660,
   "destCountryCode3": "BRA",
   "distanceLessThanFirstLeg": false,
   "dnSiteVoList": [
@@ -110,8 +110,8 @@
       "totalGrossVolume": 1,
       "totalGrossWeight": 100,
       "timeWindow": [
-        "2026-10-21 14:00",
-        "2026-10-21 18:00"
+        840,
+        1080
       ]
     },
     {
@@ -122,8 +122,8 @@
       "totalGrossVolume": 1,
       "totalGrossWeight": 100,
       "timeWindow": [
-        "2026-10-21 14:00",
-        "2026-10-21 18:00"
+        840,
+        1080
       ]
     },
     {
@@ -134,8 +134,8 @@
       "totalGrossVolume": 1,
       "totalGrossWeight": 100,
       "timeWindow": [
-        "2026-10-21 14:40",
-        "2026-10-21 18:00"
+        880,
+        1080
       ]
     }
   ],
