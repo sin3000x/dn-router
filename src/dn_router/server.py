@@ -7,13 +7,14 @@
 import argparse
 import os
 import socket
-import sys
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib.resources import files
 from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlsplit
+
+from aipaas.logger_factory import logger
 
 from .cli import solve_text
 from .visualization import dumps, report_data
@@ -113,7 +114,7 @@ class _Handler(BaseHTTPRequestHandler):
         )
 
     def log_message(self, fmt: str, *args: Any) -> None:
-        print(f"[dn-router] {fmt % args}", file=sys.stderr)
+        logger.info("%s %s", self.address_string(), fmt % args)
 
     def _solve(self, raw: str, query: dict[str, list[str]], source: Any) -> None:
         """求解请求文本；业务失败照常返回报告，只有展示数据整理失败才算服务错误。"""
@@ -125,6 +126,7 @@ class _Handler(BaseHTTPRequestHandler):
         try:
             payload, result = solve_text(raw=raw, time_limit_ms=limit)
         except Exception as error:  # noqa: BLE001 - HTTP 边界兜底
+            logger.exception("求解异常")
             # 求解内部异常也要给页面返回可读错误，而不是直接断开连接。
             self._json(
                 status=HTTPStatus.INTERNAL_SERVER_ERROR, body={"error": repr(error)}
@@ -135,6 +137,7 @@ class _Handler(BaseHTTPRequestHandler):
                 payload=payload if isinstance(payload, dict) else {}, result=result
             )
         except (KeyError, TypeError, ValueError) as error:
+            logger.exception("报告数据整理失败")
             self._json(
                 status=HTTPStatus.INTERNAL_SERVER_ERROR, body={"error": repr(error)}
             )
@@ -225,13 +228,12 @@ def main(argv: list[str] | None = None) -> int:
             f"无法监听 {args.host}:{args.port}（{error.strerror}），可用 --port 换一个端口\n",
         )
     host, port = args.host, server.server_port
-    print(f"dn-router 可视化服务（目录 {Path(args.dir).resolve()}）", flush=True)
+    logger.info("dn-router 可视化服务（目录 %s）", Path(args.dir).resolve())
     for address in _display_hosts(host):
-        print(f"  http://{address}:{port}/", flush=True)
+        logger.info("  http://%s:%d/", address, port)
     if host in ("127.0.0.1", "localhost"):
-        print(
-            f"远程服务器上运行时，本地执行：ssh -L {port}:localhost:{port} <服务器>",
-            flush=True,
+        logger.info(
+            "远程服务器上运行时，本地执行：ssh -L %d:localhost:%d <服务器>", port, port
         )
     try:
         server.serve_forever()

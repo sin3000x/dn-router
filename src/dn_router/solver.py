@@ -11,6 +11,7 @@ from time import perf_counter
 from typing import Any, Literal, NamedTuple, NotRequired, TypedDict
 
 import numpy as np
+from aipaas.logger_factory import logger
 from ortools.constraint_solver import pywrapcp, routing_enums_pb2
 from pydantic import ValidationError
 
@@ -173,6 +174,7 @@ def solve(request: Request | dict[str, Any], *, time_limit_ms: int = 200) -> Res
                 request = Request.model_validate(request)
             problem = Problem.from_request(request)
     except (ValidationError, InputError) as error:
+        logger.warning("请求无效：%s", error)
         errors: list[ErrorItem] = [{"code": "INVALID_INPUT", "message": str(error)}]
         return Result(
             status="INVALID_INPUT", routes=[], errors=errors, elapsedMs=elapsed()
@@ -184,6 +186,16 @@ def solve(request: Request | dict[str, Any], *, time_limit_ms: int = 200) -> Res
         "warnings": problem.warnings,
     }
     nodes = range(1, len(problem.dns) + 1)
+    logger.info(
+        "开始求解 taskNo=%s：有效 DN %d 单，拒绝 %d 单，车型 %d 种，时限 %d ms",
+        request.taskNo,
+        len(problem.dns),
+        len(problem.rejected),
+        len(problem.vehicle_types),
+        time_limit_ms,
+    )
+    for warning in problem.warnings:
+        logger.warning("taskNo=%s：%s", request.taskNo, warning)
 
     # 任一有效 DN 超出全部车型容量时整批不可行，不能通过丢弃该单生成路线。
     oversized: list[ErrorItem] = [
@@ -195,6 +207,11 @@ def solve(request: Request | dict[str, Any], *, time_limit_ms: int = 200) -> Res
         if not problem.fitting_types([i])
     ]
     if oversized:
+        logger.warning(
+            "taskNo=%s 整批不可行：%d 单超出全部车型容量",
+            request.taskNo,
+            len(oversized),
+        )
         return Result(
             **base,
             status="INFEASIBLE_INPUT",
@@ -219,6 +236,7 @@ def solve(request: Request | dict[str, Any], *, time_limit_ms: int = 200) -> Res
         weights = _ObjectiveWeights(problem)
         if weights.overflows:
             message = "distance magnitude too large"
+            logger.warning("taskNo=%s 目标值溢出：%s", request.taskNo, message)
             errors = [{"code": "OBJECTIVE_OVERFLOW", "message": message}]
             return Result(
                 **base,
@@ -240,12 +258,19 @@ def solve(request: Request | dict[str, Any], *, time_limit_ms: int = 200) -> Res
         build_ms = (perf_counter() - build_started) * 1000 - search_ms
         if solution:
             routes, source = model.routes(solution), "ortools"
+        else:
+            logger.info(
+                "taskNo=%s OR-Tools 未返回解（状态 %s），沿用初解",
+                request.taskNo,
+                solver_status,
+            )
 
     # 输出前统一独立审计，不依赖求解器约束是否被正确编码。
     # 输入已通过校验，审计失败说明求解流程有缺陷，不能报告为输入错误。
     try:
         validate_routes(problem=problem, routes=routes)
     except InputError as error:
+        logger.error("taskNo=%s 路线审计失败：%s", request.taskNo, error)
         errors = [{"code": "ROUTE_AUDIT_FAILED", "message": str(error)}]
         return Result(
             **base,
@@ -257,6 +282,17 @@ def solve(request: Request | dict[str, Any], *, time_limit_ms: int = 200) -> Res
     output = [_route_output(problem=problem, route=route) for route in routes]
     total_distance = sum(problem.length(r.nodes) for r in routes) / DIST_SCALE
     policy = "vehicles_distance_type" if request.count_first else "distance_type"
+    logger.info(
+        "求解完成 taskNo=%s：来源 %s，%d 辆车，总距离 %.3f，建模 %.1f ms，"
+        "搜索 %.1f ms，总耗时 %.1f ms",
+        request.taskNo,
+        source,
+        len(output),
+        total_distance,
+        build_ms,
+        search_ms,
+        elapsed(),
+    )
     # 有限时间搜索只能声明可行，不能据此声称全局最优。
     return Result(
         **base,

@@ -12,6 +12,9 @@
 
 JSON Schema 见 `schemas/request.schema.json`（由 `models.Request` 生成）。
 
+日志写入 `aipaas.logger_factory.logger`（标准库 `logging.Logger`）：求解开始、结束各一条 INFO，
+输入无效、整批不可行等记 WARNING，审计失败记 ERROR；`serve` 的访问记录和启动信息也走它。
+
 ## 请求
 
 请求及嵌套对象允许携带额外字段，解析时忽略。时间点和时长都是整数，单位由调用方统一约定
