@@ -67,7 +67,7 @@ class VehicleType(BaseModel):
     vehicleTypeName: str
 
 
-# 有向矩阵边；from 是 Python 关键字，内部通过 origin 访问。
+# 矩阵边（无向，两个方向共用）；from 是 Python 关键字，内部通过 origin 访问。
 # 矩阵约 N² 条，用 slots 数据类代替 BaseModel，校验规则相同但实例构造更快；
 # 同样忽略额外字段。Python 里构造用 origin=...，JSON 里仍是 from。
 @dataclass(slots=True)
@@ -84,9 +84,9 @@ class Leg:
 
 # 配送请求：矩阵、订单、车型及路线约束集中在这里声明。
 class Request(BaseModel):
-    # 唯一权威矩阵；pathDistanceVoList 仅兼容接收。
-    allPathDistanceVoList: list[Leg]
-    pathDistanceVoList: list[Leg] = Field(default_factory=list)
+    # 唯一权威矩阵：无向边，每对点给一条，两个方向共用；allPathDistanceVoList 仅兼容接收。
+    pathDistanceVoList: list[Leg]
+    allPathDistanceVoList: list[Leg] = Field(default_factory=list)
     # 时间点、时长（含矩阵 duration）都是同一单位的整数，由调用方约定，这里不换算。
     # 缺少 earliestShippingDate 即旧版不考虑时间的请求，见 timed。
     unloadingTime: Annotated[int, Field(ge=0)] = 0

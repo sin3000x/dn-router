@@ -44,7 +44,7 @@ request = Request(
             vehicleTypeName="small", totalVolume=Decimal(10), totalWeight=Decimal(1000)
         )
     ],
-    allPathDistanceVoList=[Leg(origin="W", to="D1", planDistance=Decimal("12.5"))],
+    pathDistanceVoList=[Leg(origin="W", to="D1", planDistance=Decimal("12.5"))],
 )
 result = solve(request, time_limit_ms=1000)
 ```

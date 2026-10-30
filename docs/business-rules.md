@@ -73,14 +73,16 @@
 
 ## 矩阵
 
-- `allPathDistanceVoList` 是唯一权威矩阵，按 `(from, to)` 的仓库 ID / DN 号索引，支持非对称距离和耗时。
-- 必须提供保留 DN 所需的全部有向边：仓库 → DN、DN → DN，并带 `duration`。
-  不从坐标估算缺失边，也不把缺失当零；缺失或同键冲突 → `INVALID_INPUT`。
-- 不需要返仓边和对角线。对角线非零时归零并告警。
+- `pathDistanceVoList` 是唯一权威矩阵（半矩阵），端点为仓库 ID / DN 号。边是无向的：每对点给一条，
+  `from`/`to` 哪个在前都行，两个方向共用同一距离和耗时，不支持非对称。
+- 必须覆盖保留 DN 所需的每一对点：仓库与每个 DN、DN 与 DN，并带 `duration`。
+  不从坐标估算缺失边，也不把缺失当零；缺失 → `INVALID_INPUT`。同一对点可重复给（任一方向），
+  但取值必须完全一致，冲突 → `INVALID_INPUT`。
+- 不需要对角线。对角线非零时归零并告警。
 - 同 `siteCode` 的 DN 之间视为同一物理停靠，边的距离和耗时归零并告警。
   因此同 `siteCode` 必须确实是同一个卸货地点。
 - `beginSiteCode` / `endSiteCode` 只是标签，不作索引。
-- `pathDistanceVoList` 只兼容接收，不补齐也不覆盖权威矩阵，非空时告警。
+- `allPathDistanceVoList`（全矩阵）只兼容接收，不参与求解，也不补齐缺边，非空时告警。
 
 ## 数值精度
 

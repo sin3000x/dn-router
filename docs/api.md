@@ -38,8 +38,8 @@ JSON Schema 见 `schemas/request.schema.json`（由 `models.Request` 生成）�
 | `enableTimeWindows` | bool | 否 | true | false 时忽略全部 DN 时间窗 |
 | `dnSiteVoList` | DN[] | 是 | | 待配送 DN，可为空列表 |
 | `vehicleTypeVoList` | VehicleType[] | 是 | | 车型，至少一个；每种车型数量不限 |
-| `allPathDistanceVoList` | Leg[] | 是 | | 唯一权威的有向距离/耗时矩阵 |
-| `pathDistanceVoList` | Leg[] | 否 | [] | 兼容字段，只接收不使用；非空时给出警告 |
+| `pathDistanceVoList` | Leg[] | 是 | | 唯一权威的距离/耗时半矩阵，无向边，每对点一条 |
+| `allPathDistanceVoList` | Leg[] | 否 | [] | 兼容字段，只接收不使用；非空时给出警告 |
 | `maxSiteQty` | int ≥ 0 | 否 | 0 | 每车去重站点数上限，0 表示不限 |
 | `lonAndLatCombination` | 0 \| 1 \| 2 \| null | 否 | null | 站点计数口径：0 按 siteCode，1 按坐标，2/null 按 DN |
 | `siteDistanceLimit` | number | 否 | 0 | 相邻配送点之间的单段距离上限，≤0 表示不限 |
@@ -66,7 +66,7 @@ JSON Schema 见 `schemas/request.schema.json`（由 `models.Request` 生成）�
 | `totalVolume` / `totalWeight` | number > 0 | 是 | 容积、载重，最多 6 位小数 |
 | `vehicleTypeCode` / `themeCode` | string | 否 | 只接收 |
 
-### 矩阵边（`allPathDistanceVoList[]`）
+### 矩阵边（`pathDistanceVoList[]`）
 
 | 字段 | 类型 | 必填 | 说明 |
 |---|---|---|---|
@@ -75,8 +75,9 @@ JSON Schema 见 `schemas/request.schema.json`（由 `models.Request` 生成）�
 | `duration` | int ≥ 0 | 求解所需边必填（旧版请求可省略） | 行驶耗时 |
 | `beginSiteCode` / `endSiteCode` | string | 否 | 附带标签，不作索引 |
 
-必须提供：仓库 → 每个保留 DN、每个保留 DN → 其他保留 DN 的有向边，且带 `duration`（旧版请求不要求）。
-不需要返仓边和对角线。同一 `(from, to)` 重复出现时取值必须完全一致。完整规则见
+边是无向的，`from`/`to` 顺序随意，两个方向共用同一取值。必须覆盖仓库与每个保留 DN、保留 DN 两两之间的
+每一对点，且带 `duration`（旧版请求不要求）。
+不需要对角线。同一对点重复出现（任一方向）时取值必须完全一致。完整规则见
 [业务规则 · 矩阵](business-rules.md#矩阵)。
 
 ## 输出
@@ -151,9 +152,11 @@ CLI 读文件或解析 JSON 失败时，`errors` 只有 `message`，没有 `code
 
 | 前缀 | 说明 |
 |---|---|
-| `DIAGONAL_NORMALIZED: <id>` | 对角线边给了非零距离/耗时，已按 0 处理 |
-| `SAME_SITE_TRAVEL_NORMALIZED: <a> -> <b>` | 同 siteCode 的 DN 之间给了非零距离/耗时，已按 0 处理 |
-| `pathDistanceVoList is compatibility-only; ...` | `pathDistanceVoList` 非空，已忽略 |
+| `DIAGONAL_NORMALIZED: <id> ...` | 对角线边给了非零距离/耗时，已按 0 处理 |
+| `SAME_SITE_TRAVEL_NORMALIZED: <a> -> <b> ...` | 同 siteCode 的 DN 之间给了非零距离/耗时，已按 0 处理 |
+| `FULL_MATRIX_IGNORED: ...` | `allPathDistanceVoList` 非空，已忽略 |
+
+前缀是固定代码，冒号后为中文说明。
 
 ## 示例
 

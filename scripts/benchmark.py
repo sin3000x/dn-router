@@ -10,7 +10,7 @@ from typing import Any
 from dn_router import solve
 
 
-# 生成完整的仓库至 DN、DN 至 DN 有向矩阵，直线距离仅用于合成样本。
+# 生成仓库与 DN、DN 与 DN 之间的无向矩阵，每对点一条，直线距离仅用于合成样本。
 def generate(n: int, seed: int) -> dict[str, Any]:
     # 使用局部随机源保证同一种子可复现，且不改变其他代码的随机状态。
     rng = random.Random(seed)
@@ -18,7 +18,7 @@ def generate(n: int, seed: int) -> dict[str, Any]:
         (rng.uniform(-50, 50), rng.uniform(-50, 50)) for _ in range(n)
     ]
     ids = ["DEPOT"] + [f"DN{i}" for i in range(n)]
-    # 不生成对角线和返仓边，符合开放路线输入要求。
+    # 不生成对角线，符合输入要求。
     matrix = [
         {
             "from": a,
@@ -28,7 +28,7 @@ def generate(n: int, seed: int) -> dict[str, Any]:
         }
         for i, a in enumerate(ids)
         for j, b in enumerate(ids)
-        if i != j and j
+        if i < j
     ]
     return {
         "sourceLocation": "DEPOT",
@@ -41,7 +41,7 @@ def generate(n: int, seed: int) -> dict[str, Any]:
         "lonAndLatCombination": 0,
         "distanceLessThanFirstLeg": True,
         "siteDistanceLimit": 40,
-        "allPathDistanceVoList": matrix,
+        "pathDistanceVoList": matrix,
         "dnSiteVoList": [
             {
                 "orderReleaseId": ids[i + 1],

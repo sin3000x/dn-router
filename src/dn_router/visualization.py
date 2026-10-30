@@ -249,7 +249,7 @@ _REQUEST_FIELDS = (
 def _raw_matrix(payload: Json, ids: list[str], legs: list[Json]) -> Json:
     """按输入原样整理距离与耗时矩阵，行列为仓库加全部 DN；缺失的边为 null。
 
-    不做归一化，也不依赖请求校验通过，便于排查缺边或取值错误。
+    输入是无向边，两个方向填同一值。不做归一化，也不依赖请求校验通过，便于排查缺边或取值错误。
     """
     source = payload.get("sourceLocation")
     points = [source if isinstance(source, str) else None, *ids]
@@ -259,8 +259,8 @@ def _raw_matrix(payload: Json, ids: list[str], legs: list[Json]) -> Json:
     for leg in legs:
         a, b = index.get(leg.get("from")), index.get(leg.get("to"))
         if a is not None and b is not None:
-            distance[a][b] = leg.get("planDistance")
-            duration[a][b] = leg.get("duration")
+            distance[a][b] = distance[b][a] = leg.get("planDistance")
+            duration[a][b] = duration[b][a] = leg.get("duration")
     return {"ids": points, "distance": distance, "duration": duration}
 
 
@@ -272,7 +272,7 @@ def _request_summary(payload: Json, records: Callable[[str], list[Json]]) -> Jso
         "siteCodeCount": len(
             {d.get("siteCode") for d in records("dnSiteVoList")} - {None}
         ),
-        "legCount": len(records("allPathDistanceVoList")),
+        "legCount": len(records("pathDistanceVoList")),
     }
 
 
@@ -340,7 +340,7 @@ def report_data(payload: Json, result: Mapping[str, Any]) -> Json:
         "vehicles": records("vehicleTypeVoList"),
         "request": _request_summary(payload=payload, records=records),
         "matrix": _raw_matrix(
-            payload=payload, ids=list(orders), legs=records("allPathDistanceVoList")
+            payload=payload, ids=list(orders), legs=records("pathDistanceVoList")
         ),
         # 停靠明细逐 DN 展示体积、重量和时间窗，只取页面用到的字段。
         "orders": {

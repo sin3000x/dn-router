@@ -81,7 +81,7 @@ def test_request_summary_and_order_details():
             {"orderReleaseId": "B", "siteCode": "S1", "timeWindow": []},
             {"orderReleaseId": "C", "siteCode": "S2"},
         ],
-        "allPathDistanceVoList": [{}, {}],
+        "pathDistanceVoList": [{}, {}],
     }
     data = report_data(
         payload=payload, result={"status": "INVALID_INPUT", "routes": []}
@@ -270,7 +270,7 @@ def test_raw_matrix_keeps_missing_legs_as_null():
     payload = {
         "sourceLocation": "WH",
         "dnSiteVoList": [{"orderReleaseId": "A"}, {"orderReleaseId": "B"}],
-        "allPathDistanceVoList": [
+        "pathDistanceVoList": [
             {"from": "WH", "to": "A", "planDistance": Decimal("1.5"), "duration": 60},
             {"from": "A", "to": "X", "planDistance": 9},
         ],
@@ -279,8 +279,8 @@ def test_raw_matrix_keeps_missing_legs_as_null():
         payload=payload, result={"status": "INVALID_INPUT", "routes": []}
     )["matrix"]
     assert matrix["ids"] == ["WH", "A", "B"]
-    assert matrix["distance"] == [[None, 1.5, None], [None] * 3, [None] * 3]
-    assert matrix["duration"][0][1] == 60
+    assert matrix["distance"] == [[None, 1.5, None], [1.5, None, None], [None] * 3]
+    assert matrix["duration"][0][1] == matrix["duration"][1][0] == 60
 
 
 # 在线服务：返回页面；可列出并求解目录内文件、接收上传，拒绝越界路径。

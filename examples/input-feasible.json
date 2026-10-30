@@ -1,38 +1,4 @@
 {
-  "allPathDistanceVoList": [
-    {
-      "beginSiteCode": "PA_CROSSDO",
-      "endSiteCode": "PA_CROSSDO",
-      "from": "PA_CROSSDO",
-      "to": "PA_CROSSDO",
-      "planDistance": 0,
-      "duration": 52
-    },
-    {
-      "beginSiteCode": "PA_CROSSDO",
-      "endSiteCode": "CCC0007",
-      "from": "PA_CROSSDO",
-      "to": "123234768",
-      "planDistance": 2587.037,
-      "duration": 55
-    },
-    {
-      "beginSiteCode": "CCC0007",
-      "endSiteCode": "PA_CROSSDO",
-      "from": "123234768",
-      "to": "PA_CROSSDO",
-      "planDistance": 2486.461,
-      "duration": 9
-    },
-    {
-      "beginSiteCode": "CCC0007",
-      "endSiteCode": "CCC0007",
-      "from": "123234768",
-      "to": "123234768",
-      "planDistance": 0,
-      "duration": 4
-    }
-  ],
   "unloadingTime": 30,
   "earliestShippingDate": 660,
   "destCountryCode3": "BRA",
@@ -59,7 +25,8 @@
       "endSiteCode": "CCC0007",
       "from": "PA_CROSSDO",
       "to": "123234768",
-      "planDistance": 2587.037
+      "planDistance": 2587.037,
+      "duration": 55
     }
   ],
   "quotationModel": "distance",

@@ -278,22 +278,26 @@ def validate_routes(problem: Problem, routes: Iterable[Route]) -> None:
 
 
 def _edges(request: Request, warnings: list[str]) -> Edges:
-    """按 (from, to) 索引矩阵；允许完全相同的重复边，冲突时拒绝请求。"""
+    """按 (from, to) 索引矩阵；每条无向边同时登记两个方向。
+
+    允许同一对点重复出现（任一方向）且取值完全一致，冲突时拒绝请求。
+    """
     edges: Edges = {}
-    for leg in request.allPathDistanceVoList:
-        key = (leg.origin, leg.to)
-        known = edges.get(key)
-        if known is not None and (
-            known.planDistance != leg.planDistance or known.duration != leg.duration
-        ):
-            raise InputError(f"conflicting matrix entries: {key}")
-        edges[key] = leg
+    for leg in request.pathDistanceVoList:
+        for key in ((leg.origin, leg.to), (leg.to, leg.origin)):
+            known = edges.get(key)
+            if known is not None and (
+                known.planDistance != leg.planDistance or known.duration != leg.duration
+            ):
+                raise InputError(f"conflicting matrix entries: {key}")
+            edges[key] = leg
         if leg.origin == leg.to and (leg.planDistance or leg.duration):
-            warnings.append(f"DIAGONAL_NORMALIZED: {leg.origin}")
-    if request.pathDistanceVoList:
+            warnings.append(
+                f"DIAGONAL_NORMALIZED: {leg.origin} 到自身的距离/耗时非零，已按 0 处理"
+            )
+    if request.allPathDistanceVoList:
         warnings.append(
-            "pathDistanceVoList is compatibility-only; "
-            "allPathDistanceVoList is authoritative"
+            "FULL_MATRIX_IGNORED: 已忽略 allPathDistanceVoList，距离和耗时只取 pathDistanceVoList"
         )
     return edges
 
@@ -357,11 +361,13 @@ def _matrices(
             leg = edges.get((a, b))
             travel = leg.duration if leg and timed else 0
             if leg is None or travel is None:
-                raise InputError(f"missing directed matrix leg/duration: {a} -> {b}")
+                raise InputError(f"missing matrix leg/duration: {a} -> {b}")
             # 同 siteCode 视为一次物理停靠，内部距离及行驶耗时统一归零。
             if site == sites[j]:
                 if leg.planDistance or travel:
-                    warnings.append(f"SAME_SITE_TRAVEL_NORMALIZED: {a} -> {b}")
+                    warnings.append(
+                        f"SAME_SITE_TRAVEL_NORMALIZED: {a} -> {b} 同站点，距离/耗时已按 0 处理"
+                    )
                 continue
             distance_row[j] = scaled(value=leg.planDistance, scale=DIST_SCALE)
             duration_row[j] = travel

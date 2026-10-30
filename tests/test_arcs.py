@@ -15,8 +15,8 @@ def make_problem(n=5, shared=True):
     if shared:  # D0、D1 同站，D3、D4 同站
         for k, site in ((1, "S0"), (4, "S3")):
             payload["dnSiteVoList"][k]["siteCode"] = site
-    # 让距离和耗时不对称、互不相同，避免巧合相等掩盖错误。
-    for k, leg in enumerate(payload["allPathDistanceVoList"]):
+    # 让各边距离和耗时互不相同，避免巧合相等掩盖错误。
+    for k, leg in enumerate(payload["pathDistanceVoList"]):
         leg["planDistance"] = 1 + k % 7
         leg["duration"] = 30 + k % 11
     return Problem.from_request(Request.model_validate(payload))

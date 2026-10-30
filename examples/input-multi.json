@@ -1,102 +1,4 @@
 {
-  "allPathDistanceVoList": [
-    {
-      "from": "PA_CROSSDO",
-      "to": "PA_CROSSDO",
-      "planDistance": 0,
-      "duration": 0
-    },
-    {
-      "from": "PA_CROSSDO",
-      "to": "123234768",
-      "planDistance": 100,
-      "duration": 10
-    },
-    {
-      "from": "PA_CROSSDO",
-      "to": "DN2",
-      "planDistance": 100,
-      "duration": 10
-    },
-    {
-      "from": "PA_CROSSDO",
-      "to": "DN3",
-      "planDistance": 100,
-      "duration": 10
-    },
-    {
-      "from": "123234768",
-      "to": "PA_CROSSDO",
-      "planDistance": 10,
-      "duration": 10
-    },
-    {
-      "from": "123234768",
-      "to": "123234768",
-      "planDistance": 0,
-      "duration": 0
-    },
-    {
-      "from": "123234768",
-      "to": "DN2",
-      "planDistance": 0,
-      "duration": 0
-    },
-    {
-      "from": "123234768",
-      "to": "DN3",
-      "planDistance": 10,
-      "duration": 10
-    },
-    {
-      "from": "DN2",
-      "to": "PA_CROSSDO",
-      "planDistance": 10,
-      "duration": 10
-    },
-    {
-      "from": "DN2",
-      "to": "123234768",
-      "planDistance": 0,
-      "duration": 0
-    },
-    {
-      "from": "DN2",
-      "to": "DN2",
-      "planDistance": 0,
-      "duration": 0
-    },
-    {
-      "from": "DN2",
-      "to": "DN3",
-      "planDistance": 10,
-      "duration": 10
-    },
-    {
-      "from": "DN3",
-      "to": "PA_CROSSDO",
-      "planDistance": 10,
-      "duration": 10
-    },
-    {
-      "from": "DN3",
-      "to": "123234768",
-      "planDistance": 10,
-      "duration": 10
-    },
-    {
-      "from": "DN3",
-      "to": "DN2",
-      "planDistance": 10,
-      "duration": 10
-    },
-    {
-      "from": "DN3",
-      "to": "DN3",
-      "planDistance": 0,
-      "duration": 0
-    }
-  ],
   "unloadingTime": 30,
   "earliestShippingDate": 660,
   "destCountryCode3": "BRA",
@@ -141,7 +43,44 @@
   ],
   "lonAndLatCombination": 0,
   "maxSiteQty": 2,
-  "pathDistanceVoList": [],
+  "pathDistanceVoList": [
+    {
+      "from": "PA_CROSSDO",
+      "to": "123234768",
+      "planDistance": 100,
+      "duration": 10
+    },
+    {
+      "from": "PA_CROSSDO",
+      "to": "DN2",
+      "planDistance": 100,
+      "duration": 10
+    },
+    {
+      "from": "PA_CROSSDO",
+      "to": "DN3",
+      "planDistance": 100,
+      "duration": 10
+    },
+    {
+      "from": "123234768",
+      "to": "DN2",
+      "planDistance": 0,
+      "duration": 0
+    },
+    {
+      "from": "123234768",
+      "to": "DN3",
+      "planDistance": 10,
+      "duration": 10
+    },
+    {
+      "from": "DN2",
+      "to": "DN3",
+      "planDistance": 10,
+      "duration": 10
+    }
+  ],
   "quotationModel": "city",
   "siteDistanceLimit": 0,
   "sourceLatitude": -1.342421,

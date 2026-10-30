@@ -30,13 +30,12 @@ def case(n=3):
         {"totalVolume": 10, "totalWeight": 10000, "vehicleTypeName": "large"},
         {"totalVolume": 2, "totalWeight": 1000, "vehicleTypeName": "small"},
     ]
-    p["pathDistanceVoList"] = []
     ids = [p["sourceLocation"]] + [d["orderReleaseId"] for d in p["dnSiteVoList"]]
-    p["allPathDistanceVoList"] = [
-        {"from": a, "to": b, "planDistance": 10 if a == ids[0] else 1, "duration": 1}
-        for a in ids
-        for b in ids
-        if a != b
+    # 无向矩阵每对点一条，仓库总在 from 一侧。
+    p["pathDistanceVoList"] = [
+        {"from": a, "to": b, "planDistance": 10 if i == 0 else 1, "duration": 1}
+        for i, a in enumerate(ids)
+        for b in ids[i + 1 :]
     ]
     p["quotationModel"] = "city"
     p["maxSiteQty"] = 0
@@ -76,10 +75,8 @@ def test_extra_fields_are_ignored():
     p = case(1)
     expected = Request.model_validate(p)
     p["extra"] = {"metadata": True}
-    for field in ("dnSiteVoList", "vehicleTypeVoList", "allPathDistanceVoList"):
+    for field in ("dnSiteVoList", "vehicleTypeVoList", "pathDistanceVoList"):
         p[field][0]["extra"] = "ignored"
-    p["pathDistanceVoList"] = [dict(p["allPathDistanceVoList"][0])]
-    expected.pathDistanceVoList = expected.allPathDistanceVoList[:1]
     assert Request.model_validate(p) == expected
     assert run(p)["servedOrderCount"] == 1
 
@@ -91,7 +88,7 @@ def test_request_object_input():
     for key in ("status", "taskNo", "rejectedOrders", "servedOrderCount"):
         assert as_model[key] == as_dict[key]
     q = case(2)
-    q["allPathDistanceVoList"] = q["allPathDistanceVoList"][1:]
+    q["pathDistanceVoList"] = q["pathDistanceVoList"][1:]
     assert solve(Request.model_validate(q))["status"] == "INVALID_INPUT"
 
 
@@ -100,8 +97,8 @@ def test_leg_constructed_by_name():
     leg = Leg(origin="W", to="D1", planDistance=Decimal("1.5"))
     assert leg == Leg(**{"from": "W", "to": "D1", "planDistance": 1.5})
     request = Request.model_validate(case(1))
-    request.allPathDistanceVoList[0] = leg
-    assert request.model_dump(by_alias=True)["allPathDistanceVoList"][0]["from"] == "W"
+    request.pathDistanceVoList[0] = leg
+    assert request.model_dump(by_alias=True)["pathDistanceVoList"][0]["from"] == "W"
 
 
 # 车辆数优先时允许升级车型，将多单合并到一辆车。
@@ -170,7 +167,7 @@ def test_inter_stop_limit_is_hard_and_not_depot_limit():
 # 站间距离和超过首段时拆车，关闭首段约束后允许合并。
 def test_first_leg_constraint():
     p = case(2)
-    for leg in p["allPathDistanceVoList"]:
+    for leg in p["pathDistanceVoList"]:
         leg["planDistance"] = 1 if leg["from"] == p["sourceLocation"] else 2
     p["distanceLessThanFirstLeg"] = True
     assert run(p)["vehicleCount"] == 2
@@ -183,7 +180,7 @@ def test_first_leg_constraint():
 @pytest.mark.parametrize(("first_leg", "vehicles"), [(2, 1), (1, 2)])
 def test_first_leg_budget_spans_multiple_legs(first_leg, vehicles):
     p = case(3)
-    for leg in p["allPathDistanceVoList"]:
+    for leg in p["pathDistanceVoList"]:
         is_depot = leg["from"] == p["sourceLocation"]
         leg["planDistance"] = first_leg if is_depot else 1
     p["distanceLessThanFirstLeg"] = True
@@ -228,7 +225,7 @@ def test_legacy_request_without_time():
     p = case(3)
     for field in ("earliestShippingDate", "unloadingTime", "latestShippingDate"):
         p.pop(field, None)
-    for leg in p["allPathDistanceVoList"]:
+    for leg in p["pathDistanceVoList"]:
         del leg["duration"]
     for dn in p["dnSiteVoList"]:
         del dn["timeWindow"]
@@ -263,7 +260,7 @@ def test_legacy_request_keeps_same_site_contiguous():
 # 带出仓时间的请求仍要求耗时；只有出仓上限没有下限时拒绝。
 def test_timed_request_still_requires_duration():
     p = case(2)
-    del p["allPathDistanceVoList"][0]["duration"]
+    del p["pathDistanceVoList"][0]["duration"]
     assert solve(p)["status"] == "INVALID_INPUT"
     p = case(1)
     del p["earliestShippingDate"]
@@ -271,24 +268,57 @@ def test_timed_request_still_requires_duration():
     assert solve(p)["status"] == "INVALID_INPUT"
 
 
-# 缺少必需的有向矩阵边时返回输入错误，不能默认距离为零。
+# 缺少必需的矩阵边时返回输入错误，不能默认距离为零。
 def test_missing_matrix_is_error():
     p = case(2)
-    p["allPathDistanceVoList"] = [
+    p["pathDistanceVoList"] = [
         leg
-        for leg in p["allPathDistanceVoList"]
+        for leg in p["pathDistanceVoList"]
         if not (leg["from"] == "D0" and leg["to"] == "D1")
     ]
     assert solve(p)["status"] == "INVALID_INPUT"
 
 
-# 同一有向边的重复记录若耗时冲突，必须拒绝输入。
-def test_conflicting_matrix_is_error():
+# 同一对点的重复记录（任一方向）若取值冲突，必须拒绝输入。
+@pytest.mark.parametrize("reverse", [False, True])
+def test_conflicting_matrix_is_error(reverse):
     p = case(1)
-    p["allPathDistanceVoList"].append(
-        {**p["allPathDistanceVoList"][0], "duration": 100}
-    )
+    leg = p["pathDistanceVoList"][0]
+    duplicate = {**leg, "duration": 100}
+    if reverse:
+        duplicate.update({"from": leg["to"], "to": leg["from"]})
+    p["pathDistanceVoList"].append(duplicate)
     assert solve(p)["status"] == "INVALID_INPUT"
+
+
+# 无向边两个方向共用：反向书写或两向都给同值，结果一致。
+def test_undirected_matrix_either_direction():
+    p = case(3)
+    expected = run(p)
+    q = case(3)
+    for leg in q["pathDistanceVoList"]:
+        leg["from"], leg["to"] = leg["to"], leg["from"]
+    q["pathDistanceVoList"] += [
+        {**leg, "from": leg["to"], "to": leg["from"]} for leg in q["pathDistanceVoList"]
+    ]
+    actual = run(q)
+    assert actual["totalDistance"] == expected["totalDistance"]
+    assert actual["vehicleCount"] == expected["vehicleCount"]
+    assert not actual["warnings"]
+
+
+# 全距离矩阵不参与求解：取值再离谱也不影响结果，只给一条中文告警。
+def test_full_matrix_is_ignored():
+    p = case(2)
+    expected = run(p)
+    p["allPathDistanceVoList"] = [
+        {**leg, "planDistance": 999, "duration": 999} for leg in p["pathDistanceVoList"]
+    ]
+    actual = run(p)
+    assert actual["totalDistance"] == expected["totalDistance"]
+    assert actual["warnings"] == [
+        "FULL_MATRIX_IGNORED: 已忽略 allPathDistanceVoList，距离和耗时只取 pathDistanceVoList"
+    ]
 
 
 # 两项载荷必须同时适配同一种车型，不能拼接不同车型的容量。
@@ -306,7 +336,7 @@ def test_non_nested_vehicle_capacities():
 # 距离优先可选择多车；车辆数优先时应接受更长的合并路线。
 def test_distance_precedes_vehicle_count():
     p = case(2)
-    for leg in p["allPathDistanceVoList"]:
+    for leg in p["pathDistanceVoList"]:
         leg["planDistance"] = 1 if leg["from"] == p["sourceLocation"] else 10
     p["quotationModel"] = "distance"
     assert run(p)["vehicleCount"] == 2
