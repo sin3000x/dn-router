@@ -8,7 +8,7 @@
 from collections import defaultdict
 from collections.abc import Callable, Iterable
 from time import perf_counter
-from typing import Any, Literal, NamedTuple, NotRequired, TypedDict, Unpack
+from typing import Any, Literal, NamedTuple, NotRequired, TypedDict
 
 import numpy as np
 from ortools.constraint_solver import pywrapcp, routing_enums_pb2
@@ -76,8 +76,11 @@ class _Context(TypedDict):
     warnings: list[str]
 
 
-class _Fields(TypedDict):
-    """除 elapsedMs 外的结果字段；统计字段仅在 FEASIBLE/NO_ELIGIBLE_ORDERS 时出现。"""
+class Result(TypedDict):
+    """solve() 的公开结果对象，字段说明见 docs/api.md。
+
+    统计字段仅在 FEASIBLE/NO_ELIGIBLE_ORDERS 时出现。
+    """
 
     taskNo: NotRequired[str]
     rejectedOrders: NotRequired[list[dict[str, str]]]
@@ -95,11 +98,6 @@ class _Fields(TypedDict):
     optimalityProven: NotRequired[bool]
     solverStatus: NotRequired[int | None]
     timingsMs: NotRequired[Timings]
-
-
-class Result(_Fields):
-    """solve() 的公开结果对象，字段说明见 docs/api.md。"""
-
     elapsedMs: float
 
 
@@ -165,8 +163,8 @@ def solve(payload: dict[str, Any], *, time_limit_ms: int = 200) -> Result:
     budget = time_limit_ms / 1000
     deadline = started + budget
 
-    def finish(**fields: Unpack[_Fields]) -> Result:
-        return {**fields, "elapsedMs": _ms(perf_counter() - started)}
+    def elapsed() -> float:
+        return _ms(perf_counter() - started)
 
     try:
         with gc_paused():
@@ -174,7 +172,9 @@ def solve(payload: dict[str, Any], *, time_limit_ms: int = 200) -> Result:
             problem = Problem.from_request(request)
     except (ValidationError, InputError) as error:
         errors: list[ErrorItem] = [{"code": "INVALID_INPUT", "message": str(error)}]
-        return finish(status="INVALID_INPUT", routes=[], errors=errors)
+        return Result(
+            status="INVALID_INPUT", routes=[], errors=errors, elapsedMs=elapsed()
+        )
 
     base: _Context = {
         "taskNo": request.taskNo,
@@ -193,7 +193,13 @@ def solve(payload: dict[str, Any], *, time_limit_ms: int = 200) -> Result:
         if not problem.fitting_types([i])
     ]
     if oversized:
-        return finish(**base, status="INFEASIBLE_INPUT", routes=[], errors=oversized)
+        return Result(
+            **base,
+            status="INFEASIBLE_INPUT",
+            routes=[],
+            errors=oversized,
+            elapsedMs=elapsed(),
+        )
 
     # 逐单直送保证完整覆盖，之后每一步都只在得到可行解时替换。
     routes = [
@@ -212,7 +218,13 @@ def solve(payload: dict[str, Any], *, time_limit_ms: int = 200) -> Result:
         if weights.overflows:
             message = "distance magnitude too large"
             errors = [{"code": "OBJECTIVE_OVERFLOW", "message": message}]
-            return finish(**base, status="INVALID_INPUT", routes=[], errors=errors)
+            return Result(
+                **base,
+                status="INVALID_INPUT",
+                routes=[],
+                errors=errors,
+                elapsedMs=elapsed(),
+            )
 
         build_started = perf_counter()
         # 每车型预留的车辆数取初解路线数：总车辆数仍是初解车数的 K 倍，足够局部搜索拆分路线；
@@ -233,12 +245,18 @@ def solve(payload: dict[str, Any], *, time_limit_ms: int = 200) -> Result:
         validate_routes(problem=problem, routes=routes)
     except InputError as error:
         errors = [{"code": "ROUTE_AUDIT_FAILED", "message": str(error)}]
-        return finish(**base, status="SOLVER_ERROR", routes=[], errors=errors)
+        return Result(
+            **base,
+            status="SOLVER_ERROR",
+            routes=[],
+            errors=errors,
+            elapsedMs=elapsed(),
+        )
     output = [_route_output(problem=problem, route=route) for route in routes]
     total_distance = sum(problem.length(r.nodes) for r in routes) / DIST_SCALE
     policy = "vehicles_distance_type" if request.count_first else "distance_type"
     # 有限时间搜索只能声明可行，不能据此声称全局最优。
-    return finish(
+    return Result(
         **base,
         status="FEASIBLE" if nodes else "NO_ELIGIBLE_ORDERS",
         solutionSource=source,
@@ -250,6 +268,7 @@ def solve(payload: dict[str, Any], *, time_limit_ms: int = 200) -> Result:
         optimalityProven=False,
         solverStatus=solver_status,
         timingsMs={"buildAndSeed": round(build_ms, 3), "search": round(search_ms, 3)},
+        elapsedMs=elapsed(),
     )
 
 
