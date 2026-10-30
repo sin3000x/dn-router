@@ -102,6 +102,17 @@ data = report_data(payload, result)  # 页面所用的 JSON 数据
 - `docs/`：接口、业务规则、算法设计与 benchmark 记录。
 - `tests/`：业务回归测试。
 
+## 内网同步
+
+内网仓库的 `src/` 下放同一个 `src/dn_router/`，与内网其他目录并列。外网只维护这个目录；
+内网其余目录和文件（`src/` 下的其他模块、`run.py`、`build.sh`、`requirements.txt` 等）外网不复制、不 mock。
+
+内网以 `from src.dn_router import solve` 调用；`dn_router` 只用相对 import，不依赖内网任何模块。
+
+同步时先删除内网的 `src/dn_router/` 再整体拷入，避免外网已删除的文件残留在内网，并在内网提交信息里记下外网的 commit。
+内网 `requirements.txt` 需要包含 `pyproject.toml` 里的运行依赖，并且要求 Python 3.11+。
+内网不修改 `src/dn_router/`；发现问题时带出脱敏的请求 JSON，回到外网修复后重新同步。
+
 ## Git
 
 仓库： https://github.com/sin3000x/dn-router （私有）。
