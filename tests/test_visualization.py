@@ -1,6 +1,7 @@
 # 业务回归测试：用小样本固定输入、输出及边界规则。
 import json
 from decimal import Decimal
+from urllib.parse import urljoin
 
 import pytest
 
@@ -316,11 +317,15 @@ def fetch(url, body=None):
 
 
 def test_server_page_files_and_solve(served):
-    status, html = fetch(served + "/")
+    status, html = fetch(url=urljoin(base=served, url="/"))
     assert status == 200 and "startOnline()" in html
-    files = json.loads(fetch(served + "/api/files")[1])["files"]
+    files = json.loads(fetch(url=urljoin(base=served, url="/api/files"))[1])["files"]
     assert [f["path"] for f in files] == ["input-multi.json"]
-    status, body = fetch(served + "/api/solve?file=input-multi.json&time_limit_ms=200")
+    status, body = fetch(
+        url=urljoin(
+            base=served, url="/api/solve?file=input-multi.json&time_limit_ms=200"
+        )
+    )
     data = json.loads(body)
     assert status == 200 and data["result"]["status"] == "FEASIBLE"
     assert data["output"]["routes"][0]["siteDetails"] and data["timeline"] is not None
@@ -328,9 +333,11 @@ def test_server_page_files_and_solve(served):
 
 
 def test_server_rejects_paths_outside_root_and_reports_bad_uploads(served):
-    assert fetch(served + "/api/solve?file=../outside.json")[0] == 400
-    assert fetch(served + "/api/solve?file=missing.json")[0] == 400
-    status, body = fetch(url=served + "/api/solve", body=b"{not json")
+    assert (
+        fetch(url=urljoin(base=served, url="/api/solve?file=../outside.json"))[0] == 400
+    )
+    assert fetch(url=urljoin(base=served, url="/api/solve?file=missing.json"))[0] == 400
+    status, body = fetch(url=urljoin(base=served, url="/api/solve"), body=b"{not json")
     assert status == 200 and json.loads(body)["result"]["status"] == "INVALID_INPUT"
 
 

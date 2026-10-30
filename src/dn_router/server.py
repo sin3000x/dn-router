@@ -112,6 +112,9 @@ class _Handler(BaseHTTPRequestHandler):
             raw=raw, query=query, source={"name": query.get("name", ["上传的请求"])[0]}
         )
 
+    def log_message(self, fmt: str, *args: Any) -> None:
+        print(f"[dn-router] {fmt % args}", file=sys.stderr)
+
     def _solve(self, raw: str, query: dict[str, list[str]], source: Any) -> None:
         """求解请求文本；业务失败照常返回报告，只有展示数据整理失败才算服务错误。"""
         try:
@@ -155,9 +158,6 @@ class _Handler(BaseHTTPRequestHandler):
         self.send_header("Cache-Control", "no-store")
         self.end_headers()
         self.wfile.write(body)
-
-    def log_message(self, format: str, *args: Any) -> None:
-        print(f"[dn-router] {format % args}", file=sys.stderr)
 
 
 def make_server(

@@ -10,7 +10,7 @@ from dn_router.models import Request
 from dn_router.problem import DEPOT, Problem
 
 
-def problem(n=5, shared=True):
+def make_problem(n=5, shared=True):
     payload = case(n)
     if shared:  # D0、D1 同站，D3、D4 同站
         for k, site in ((1, "S0"), (4, "S3")):
@@ -60,7 +60,7 @@ def reference_budget(p, i, j):
     ids=["distance", "time", "first_leg_budget"],
 )
 def test_matches_elementwise_definition(build, reference, shared):
-    p = problem(shared=shared)
+    p = make_problem(shared=shared)
     matrix = build(p)
     size = len(p.dns) + 2
     assert matrix.shape == (size, size)
@@ -70,7 +70,7 @@ def test_matches_elementwise_definition(build, reference, shared):
 
 # 同站 DN 之间不再计卸货，离开站点去往别处才计一次。
 def test_unload_counted_once_per_site():
-    p = problem()
+    p = make_problem()
     time = time_matrix(p)
     assert time[1, 2] == p.duration[1][2] == 0  # 同站：D0 → D1
     assert time[2, 3] == p.duration[2][3] + p.unload
@@ -79,7 +79,7 @@ def test_unload_counted_once_per_site():
 
 # 向量化计算不应原地修改距离矩阵（预算矩阵由距离取负得到）。
 def test_budget_does_not_mutate_distance():
-    p = problem()
+    p = make_problem()
     distance = distance_matrix(p)
     before = distance.copy()
     first_leg_budget(distance)
