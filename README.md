@@ -126,6 +126,6 @@ pytest -q
 ```
 
 依赖声明在 `pyproject.toml`：运行依赖在 `dependencies`，开发依赖（pytest）在 `[dependency-groups] dev`。
-新增依赖直接改 `pyproject.toml`。生产环境用 `pip install .`。`.python-version` 是开发默认的 Python 版本。
+新增依赖直接改 `pyproject.toml`。生产环境用 `pip install .`。`.python-version` 不提交，需要时本地自建。
 `uv.lock` 和 `uv.toml` 在 `.gitignore` 中（内网镜像会改写锁文件里的源地址），不作为依赖管理依据。
 

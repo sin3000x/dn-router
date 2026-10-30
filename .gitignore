@@ -6,6 +6,7 @@ __pycache__/
 build/
 dist/
 uv.lock
+.python-version
 
 # Local test data (never committed)
 local/
