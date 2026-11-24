@@ -218,14 +218,33 @@ def test_disable_time_windows():
     assert run(p)["servedOrderCount"] == 1
 
 
-# 允许最早出仓后等待，出发上限不应误当成到货上限。
+# 尽量推迟出仓以减少首站等待，但不超过 latestShippingDate。
 def test_waiting_and_latest_departure():
     p = case(1)
     p["latestShippingDate"] = 665
     p["dnSiteVoList"][0]["timeWindow"] = [840, 900]
     r = run(p)
-    assert r["routes"][0]["departure_date"] == 660
+    assert r["routes"][0]["departure_date"] == 665
     assert r["routes"][0]["siteDetails"][0]["eta"] == 840
+
+
+# 无出仓上限限制时，推迟出仓使车辆刚好在首站时间窗开始时到达。
+def test_delayed_departure_arrives_at_first_window_start():
+    p = case(2)
+    p["earliestShippingDate"] = 0
+    p.pop("latestShippingDate", None)
+    p["unloadingTime"] = 1
+    for leg in p["pathDistanceVoList"]:
+        leg["duration"] = 2
+    p["dnSiteVoList"][0]["timeWindow"] = [8, 12]
+    p["dnSiteVoList"][1]["timeWindow"] = [15, 20]
+    r = run(p)
+    route = r["routes"][0]
+    assert route["departure_date"] == 6
+    assert route["siteDetails"] == [
+        {"siteAddress": "D0", "eta": 8},
+        {"siteAddress": "D1", "eta": 15},
+    ]
 
 
 # 旧版请求不带出仓时间、卸货时长、耗时和时间窗，输出也不含时间字段。

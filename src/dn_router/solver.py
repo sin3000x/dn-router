@@ -349,8 +349,9 @@ def _route_output(problem: Problem, route: Route) -> RouteOutput:
 
 
 def _schedule_output(problem: Problem, nodes: list[int]) -> _Schedule:
-    """出仓时间和逐单 eta，eta 取最早出仓时间表中的开始卸货时间。
+    """出仓时间和逐单 eta。
 
+    尽量推迟出仓以减少首站等待（不超过 latestShippingDate），eta 取开始卸货时间。
     旧版不考虑时间的请求返回空字典。
     """
     departure = problem.request.earliestShippingDate
@@ -358,8 +359,9 @@ def _schedule_output(problem: Problem, nodes: list[int]) -> _Schedule:
         return {}
 
     visits = problem.schedule(nodes)
+    delay = problem.departure_offset(visits)
     return {
-        "departure_date": departure,
+        "departure_date": departure + delay,
         "siteDetails": [
             {"siteAddress": problem.dn(i).orderReleaseId, "eta": departure + v.start}
             for i, v in zip(nodes, visits, strict=True)

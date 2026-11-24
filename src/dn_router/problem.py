@@ -212,6 +212,12 @@ class Problem:
             time, previous = finish, stop[-1]
         return visits
 
+    def departure_offset(self, visits: Sequence[Visit]) -> int:
+        """推迟出仓以减少首站等待，不超过 latest_departure。"""
+        if not visits:
+            return 0
+        return min(visits[0].start - visits[0].arrival, self.latest_departure)
+
     def insertions(self, nodes: Sequence[int], node: int) -> Iterator[list[int]]:
         """node 插入 nodes 各位置后，满足顺序类约束的候选路线。"""
         for position in range(len(nodes) + 1):

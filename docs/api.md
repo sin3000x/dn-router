@@ -90,7 +90,7 @@ JSON Schema 见 `schemas/request.schema.json`（由 `models.Request` 生成）�
 |---|---|---|
 | `dist` | number | 路线总距离：仓库到首站 + 站间，不含返仓；单位同输入 |
 | `siteAddresses` | string[] | 按配送顺序的 **DN 号**（不是 siteCode） |
-| `departure_date` | int | 出仓时间，恒为 `earliestShippingDate`；旧版请求不输出 |
+| `departure_date` | int | 出仓时间，尽量推迟以减少首站等待（不超过 `latestShippingDate`）；旧版请求不输出 |
 | `siteDetails` | {siteAddress, eta: int}[] | 每个 DN 一项，顺序同 `siteAddresses`；`eta` 为**开始卸货时间**；旧版请求不输出 |
 | `vehicle` | string | 车型名称（`vehicleTypeName`），取装得下本路线的最小车型 |
 | `volume` / `weight` | number | 本车 DN 的体积、重量之和 |
