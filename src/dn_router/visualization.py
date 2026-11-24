@@ -257,7 +257,8 @@ def _raw_matrix(payload: Json, ids: list[str], legs: list[Json]) -> Json:
     distance: list[list[Any]] = [[None] * len(points) for _ in points]
     duration: list[list[Any]] = [[None] * len(points) for _ in points]
     for leg in legs:
-        a, b = index.get(leg.get("from")), index.get(leg.get("to"))
+        origin = leg["from"] if "from" in leg else leg.get("origin")
+        a, b = index.get(origin), index.get(leg.get("to"))
         if a is not None and b is not None:
             distance[a][b] = distance[b][a] = leg.get("planDistance")
             duration[a][b] = duration[b][a] = leg.get("duration")

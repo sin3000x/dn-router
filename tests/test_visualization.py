@@ -283,6 +283,22 @@ def test_raw_matrix_keeps_missing_legs_as_null():
     assert matrix["duration"][0][1] == matrix["duration"][1][0] == 60
 
 
+# 原始矩阵同样识别 origin 字段别名（与模型 AliasChoices("from", "origin") 一致）。
+def test_raw_matrix_supports_origin_alias():
+    payload = {
+        "sourceLocation": "WH",
+        "dnSiteVoList": [{"orderReleaseId": "A"}],
+        "pathDistanceVoList": [
+            {"origin": "WH", "to": "A", "planDistance": "32.509", "duration": 2200},
+        ],
+    }
+    matrix = report_data(
+        payload=payload, result={"status": "INVALID_INPUT", "routes": []}
+    )["matrix"]
+    assert matrix["distance"][0][1] == matrix["distance"][1][0] == "32.509"
+    assert matrix["duration"][0][1] == matrix["duration"][1][0] == 2200
+
+
 # 在线服务：返回页面；可列出并求解目录内文件、接收上传，拒绝越界路径。
 @pytest.fixture
 def served(tmp_path):
