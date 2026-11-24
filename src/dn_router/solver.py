@@ -41,6 +41,12 @@ Status = Literal[
 ]
 
 
+_REJECT_REASONS = {
+    "EMPTY_TIME_WINDOW": "时间窗为空或起止倒挂",
+    "DIRECT_TIME_WINDOW_UNREACHABLE": "最早出仓直送仍超时",
+}
+
+
 class SiteDetail(TypedDict):
     siteAddress: str
     eta: int
@@ -194,6 +200,16 @@ def solve(request: Request | dict[str, Any], *, time_limit_ms: int = 200) -> Res
         len(problem.vehicle_types),
         time_limit_ms,
     )
+    for item in problem.rejected:
+        code = item["code"]
+        reason = _REJECT_REASONS.get(code)
+        detail = f"{code}: {reason}" if reason else code
+        logger.warning(
+            "taskNo=%s 拒绝 DN %s：%s",
+            request.taskNo,
+            item["orderReleaseId"],
+            detail,
+        )
     for warning in problem.warnings:
         logger.warning("taskNo=%s：%s", request.taskNo, warning)
 
@@ -208,9 +224,10 @@ def solve(request: Request | dict[str, Any], *, time_limit_ms: int = 200) -> Res
     ]
     if oversized:
         logger.warning(
-            "taskNo=%s 整批不可行：%d 单超出全部车型容量",
+            "taskNo=%s 整批不可行：%d 单超出全部车型容量（%s）",
             request.taskNo,
             len(oversized),
+            ", ".join(item["orderReleaseId"] for item in oversized),
         )
         return Result(
             **base,

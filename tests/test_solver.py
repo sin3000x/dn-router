@@ -3,6 +3,7 @@
 # 直接断言具体输出；缺少字段时测试本身会失败。
 import copy
 import json
+import logging
 from decimal import Decimal
 from pathlib import Path
 
@@ -190,16 +191,23 @@ def test_first_leg_budget_spans_multiple_legs(first_leg, vehicles):
 
 
 # 仅空窗及最早出仓直送仍超时的 DN 可被逐单剔除。
-def test_time_exclusions_only():
+def test_time_exclusions_only(caplog, monkeypatch):
+    test_logger = logging.getLogger("test.dn_router")
+    monkeypatch.setattr("dn_router.solver.logger", test_logger)
     p = case(3)
     p["dnSiteVoList"][0]["timeWindow"] = []
     p["dnSiteVoList"][1]["timeWindow"] = [600, 660]
-    r = run(p)
+    with caplog.at_level(logging.WARNING, logger="test.dn_router"):
+        r = run(p)
     assert {x["code"] for x in r["rejectedOrders"]} == {
         "EMPTY_TIME_WINDOW",
         "DIRECT_TIME_WINDOW_UNREACHABLE",
     }
     assert r["servedOrderCount"] == 1
+    assert p["dnSiteVoList"][0]["orderReleaseId"] in caplog.text
+    assert "EMPTY_TIME_WINDOW" in caplog.text
+    assert p["dnSiteVoList"][1]["orderReleaseId"] in caplog.text
+    assert "DIRECT_TIME_WINDOW_UNREACHABLE" in caplog.text
 
 
 # 关闭时间窗后，原本空窗的 DN 仍必须配送。
