@@ -319,6 +319,8 @@ def fetch(url, body=None):
 def test_server_page_files_and_solve(served):
     status, html = fetch(url=urljoin(base=served, url="/"))
     assert status == 200 and "startOnline()" in html
+    assert '<option value="duration" selected>耗时</option>' in html
+    assert ".edge-dur" in html and "class:'tw'" in html
     files = json.loads(fetch(url=urljoin(base=served, url="/api/files"))[1])["files"]
     assert [f["path"] for f in files] == ["input-multi.json"]
     status, body = fetch(
