@@ -336,7 +336,8 @@ def _eligible_dns(
 
         bound = None
         if window:
-            assert edge.duration is not None
+            if edge.duration is None:
+                raise InputError(f"missing depot leg/duration: {' -> '.join(path)}")
             zero = request.earliestShippingDate or 0
             bound = (window[0] - zero, window[1] - zero)
             if edge.duration > bound[1]:

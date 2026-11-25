@@ -84,9 +84,8 @@ def summarize(
     records = []
     for payload in payloads:
         result = solve(payload, time_limit_ms=budget)
-        assert (
-            result["status"] == "FEASIBLE" and result.get("servedOrderCount") == args.dn
-        ), result
+        if result["status"] != "FEASIBLE" or result.get("servedOrderCount") != args.dn:
+            raise RuntimeError(f"unexpected solve result: {result}")
         records.append(
             {
                 key: result.get(key)
